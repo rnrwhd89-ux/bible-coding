@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 // Firebase 연동
-import { auth, signInWithGoogle, logOut, onAuthChange, saveUserData, loadUserData } from './firebase';
+import { auth, signInWithGoogle, logOut, onAuthChange, saveUserData, loadUserData, getBibleVerses } from './firebase';
 
 // Bolls Life API - 개역한글(KRV) + NIV 지원
 // API 형식: https://bolls.life/get-text/{번역본}/{책번호}/{장}/
@@ -90,7 +90,7 @@ const highlightColors = [
 
 export default function BibleApp() {
   const [currentTab, setCurrentTab] = useState('bible');
-  const [translation, setTranslation] = useState('개역한글');
+  const [translation, setTranslation] = useState('개역개정');
   const [book, setBook] = useState('창세기');
   const [chapter, setChapter] = useState(1);
   const [verses, setVerses] = useState({});
@@ -237,13 +237,33 @@ export default function BibleApp() {
     return () => clearTimeout(timeoutId);
   }, [firebaseEnabled, user, highlights, notes, readingPlan, chatRooms, syncToCloud]);
 
-  // Bolls Life API에서 성경 데이터 가져오기
-  const fetchBibleData = async (bookNum, chapterNum, translationCode) => {
+  // 성경 데이터 가져오기 (Firestore 또는 Bolls Life API)
+  const fetchBibleData = async (bookNum, chapterNum, translationCode, bookName) => {
     const cacheKey = `${translationCode}_${bookNum}_${chapterNum}`;
 
     // 캐시에 있으면 캐시에서 반환
     if (bibleCache[cacheKey]) {
       return bibleCache[cacheKey];
+    }
+
+    // 개역개정이면 Firestore에서 가져오기
+    if (translationCode === 'REVISED') {
+      try {
+        const verses = await getBibleVerses(bookName, chapterNum);
+        // Bolls API와 동일한 형식으로 변환
+        const data = Object.entries(verses).map(([verse, text]) => ({
+          pk: `${bookName}_${chapterNum}_${verse}`,
+          verse: parseInt(verse),
+          text: text
+        }));
+
+        // 캐시에 저장
+        setBibleCache(prev => ({ ...prev, [cacheKey]: data }));
+        return data;
+      } catch (error) {
+        console.error('Failed to fetch bible data from Firestore:', error);
+        throw error;
+      }
     }
 
     // Bolls Life API: https://bolls.life/get-text/{번역본}/{책번호}/{장}/
@@ -272,9 +292,14 @@ export default function BibleApp() {
       setLoadError(null);
 
       try {
-        // 번역본 코드 결정: 개역한글 = KRV, NIV = NIV
-        const translationCode = translation === 'NIV' ? 'NIV' : 'KRV';
-        const data = await fetchBibleData(currentBook.bookNum, chapter, translationCode);
+        // 번역본 코드 결정: 개역개정 = REVISED, 개역한글 = KRV, NIV = NIV
+        let translationCode = 'KRV';
+        if (translation === '개역개정') {
+          translationCode = 'REVISED';
+        } else if (translation === 'NIV') {
+          translationCode = 'NIV';
+        }
+        const data = await fetchBibleData(currentBook.bookNum, chapter, translationCode, book);
 
         // Bolls API 응답: [{pk, verse, text}, ...]
         if (data && Array.isArray(data)) {
@@ -1186,7 +1211,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
             <div className="w-12 h-1 bg-gray-300 rounded-full mx-auto mb-4" />
             <h3 className="text-center text-lg font-semibold text-gray-800 mb-4">번역 선택</h3>
             <div className="space-y-2">
-              {['개역한글', 'NIV'].map(t => (
+              {['개역개정', '개역한글', 'NIV'].map(t => (
                 <button
                   key={t}
                   onClick={() => { setTranslation(t); setShowTranslationPicker(false); }}
@@ -1197,7 +1222,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                   }`}
                 >
                   {t}
-                  {t === '개역한글' && <span className="text-sm text-gray-500 ml-2">(한국어)</span>}
+                  {(t === '개역개정' || t === '개역한글') && <span className="text-sm text-gray-500 ml-2">(한국어)</span>}
                   {t === 'NIV' && <span className="text-sm text-gray-500 ml-2">(English)</span>}
                 </button>
               ))}

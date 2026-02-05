@@ -99,6 +99,30 @@ export const onAuthChange = (callback) => {
   return onAuthStateChanged(auth, callback);
 };
 
+// ===== 성경 데이터 기능 =====
+
+// 성경 데이터 가져오기 (책, 장, 번역본)
+export const getBibleVerses = async (bookName, chapterNum) => {
+  try {
+    const q = query(
+      collection(db, 'bible'),
+      where('book', '==', bookName),
+      where('chapter', '==', chapterNum),
+      orderBy('verse', 'asc')
+    );
+    const querySnapshot = await getDocs(q);
+    const verses = {};
+    querySnapshot.docs.forEach(doc => {
+      const data = doc.data();
+      verses[data.verse] = data.text;
+    });
+    return verses;
+  } catch (error) {
+    console.error('성경 데이터 불러오기 오류:', error);
+    throw error;
+  }
+};
+
 // ===== 멀티챗 기능 =====
 
 // 채팅방 생성
