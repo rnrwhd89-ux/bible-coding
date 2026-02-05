@@ -1,0 +1,1946 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+
+// Firebase 연동
+import { auth, signInWithGoogle, logOut, onAuthChange, saveUserData, loadUserData } from './firebase';
+
+// Bolls Life API - 개역한글(KRV) + NIV 지원
+// API 형식: https://bolls.life/get-text/{번역본}/{책번호}/{장}/
+// 번역본: KRV (개역한글), NIV (New International Version)
+
+// 성경 책 목록 (한글명, Bolls API 책 번호, 장 수)
+// Bolls API는 1-66 번호 체계 사용 (창세기=1, 요한계시록=66)
+const bookList = [
+  // 구약
+  { name: '창세기', bookNum: 1, chapters: 50 },
+  { name: '출애굽기', bookNum: 2, chapters: 40 },
+  { name: '레위기', bookNum: 3, chapters: 27 },
+  { name: '민수기', bookNum: 4, chapters: 36 },
+  { name: '신명기', bookNum: 5, chapters: 34 },
+  { name: '여호수아', bookNum: 6, chapters: 24 },
+  { name: '사사기', bookNum: 7, chapters: 21 },
+  { name: '룻기', bookNum: 8, chapters: 4 },
+  { name: '사무엘상', bookNum: 9, chapters: 31 },
+  { name: '사무엘하', bookNum: 10, chapters: 24 },
+  { name: '열왕기상', bookNum: 11, chapters: 22 },
+  { name: '열왕기하', bookNum: 12, chapters: 25 },
+  { name: '역대상', bookNum: 13, chapters: 29 },
+  { name: '역대하', bookNum: 14, chapters: 36 },
+  { name: '에스라', bookNum: 15, chapters: 10 },
+  { name: '느헤미야', bookNum: 16, chapters: 13 },
+  { name: '에스더', bookNum: 17, chapters: 10 },
+  { name: '욥기', bookNum: 18, chapters: 42 },
+  { name: '시편', bookNum: 19, chapters: 150 },
+  { name: '잠언', bookNum: 20, chapters: 31 },
+  { name: '전도서', bookNum: 21, chapters: 12 },
+  { name: '아가', bookNum: 22, chapters: 8 },
+  { name: '이사야', bookNum: 23, chapters: 66 },
+  { name: '예레미야', bookNum: 24, chapters: 52 },
+  { name: '예레미야애가', bookNum: 25, chapters: 5 },
+  { name: '에스겔', bookNum: 26, chapters: 48 },
+  { name: '다니엘', bookNum: 27, chapters: 12 },
+  { name: '호세아', bookNum: 28, chapters: 14 },
+  { name: '요엘', bookNum: 29, chapters: 3 },
+  { name: '아모스', bookNum: 30, chapters: 9 },
+  { name: '오바댜', bookNum: 31, chapters: 1 },
+  { name: '요나', bookNum: 32, chapters: 4 },
+  { name: '미가', bookNum: 33, chapters: 7 },
+  { name: '나훔', bookNum: 34, chapters: 3 },
+  { name: '하박국', bookNum: 35, chapters: 3 },
+  { name: '스바냐', bookNum: 36, chapters: 3 },
+  { name: '학개', bookNum: 37, chapters: 2 },
+  { name: '스가랴', bookNum: 38, chapters: 14 },
+  { name: '말라기', bookNum: 39, chapters: 4 },
+  // 신약
+  { name: '마태복음', bookNum: 40, chapters: 28 },
+  { name: '마가복음', bookNum: 41, chapters: 16 },
+  { name: '누가복음', bookNum: 42, chapters: 24 },
+  { name: '요한복음', bookNum: 43, chapters: 21 },
+  { name: '사도행전', bookNum: 44, chapters: 28 },
+  { name: '로마서', bookNum: 45, chapters: 16 },
+  { name: '고린도전서', bookNum: 46, chapters: 16 },
+  { name: '고린도후서', bookNum: 47, chapters: 13 },
+  { name: '갈라디아서', bookNum: 48, chapters: 6 },
+  { name: '에베소서', bookNum: 49, chapters: 6 },
+  { name: '빌립보서', bookNum: 50, chapters: 4 },
+  { name: '골로새서', bookNum: 51, chapters: 4 },
+  { name: '데살로니가전서', bookNum: 52, chapters: 5 },
+  { name: '데살로니가후서', bookNum: 53, chapters: 3 },
+  { name: '디모데전서', bookNum: 54, chapters: 6 },
+  { name: '디모데후서', bookNum: 55, chapters: 4 },
+  { name: '디도서', bookNum: 56, chapters: 3 },
+  { name: '빌레몬서', bookNum: 57, chapters: 1 },
+  { name: '히브리서', bookNum: 58, chapters: 13 },
+  { name: '야고보서', bookNum: 59, chapters: 5 },
+  { name: '베드로전서', bookNum: 60, chapters: 5 },
+  { name: '베드로후서', bookNum: 61, chapters: 3 },
+  { name: '요한일서', bookNum: 62, chapters: 5 },
+  { name: '요한이서', bookNum: 63, chapters: 1 },
+  { name: '요한삼서', bookNum: 64, chapters: 1 },
+  { name: '유다서', bookNum: 65, chapters: 1 },
+  { name: '요한계시록', bookNum: 66, chapters: 22 }
+];
+
+const highlightColors = [
+  { name: "노랑", color: "#FEF3C7", border: "#F59E0B" },
+  { name: "초록", color: "#D1FAE5", border: "#10B981" },
+  { name: "파랑", color: "#DBEAFE", border: "#3B82F6" },
+  { name: "분홍", color: "#FCE7F3", border: "#EC4899" },
+  { name: "보라", color: "#EDE9FE", border: "#8B5CF6" }
+];
+
+export default function BibleApp() {
+  const [currentTab, setCurrentTab] = useState('bible');
+  const [translation, setTranslation] = useState('개역한글');
+  const [book, setBook] = useState('창세기');
+  const [chapter, setChapter] = useState(1);
+  const [verses, setVerses] = useState({});
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const [highlights, setHighlights] = useState({});
+  const [notes, setNotes] = useState({});
+  const [readingPlan, setReadingPlan] = useState({});
+  const [selectedVerses, setSelectedVerses] = useState([]);
+  const [showVerseMenu, setShowVerseMenu] = useState(false);
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [noteText, setNoteText] = useState('');
+  const [noteTitle, setNoteTitle] = useState('');
+  const [showNoteDetail, setShowNoteDetail] = useState(false);
+  const [selectedNoteKey, setSelectedNoteKey] = useState(null);
+  const [showTranslationPicker, setShowTranslationPicker] = useState(false);
+  const [showBookDropdown, setShowBookDropdown] = useState(false);
+
+  // 드래그 선택 관련
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStartVerse, setDragStartVerse] = useState(null);
+  const [dragEndVerse, setDragEndVerse] = useState(null);
+  const [dragMoved, setDragMoved] = useState(false);
+  const dragStartTimeRef = useRef(null);
+  const touchStartPosRef = useRef({ x: 0, y: 0 });
+
+  // 채팅방 관리
+  const [chatRooms, setChatRooms] = useState([]);
+  const [currentChatId, setCurrentChatId] = useState(null);
+  const [showChatList, setShowChatList] = useState(false);
+  const [chatLoadingStates, setChatLoadingStates] = useState({});
+  const [unreadMessages, setUnreadMessages] = useState({});
+
+  // 데이터 캐시
+  const [bibleCache, setBibleCache] = useState({});
+
+  // Firebase 인증 관련 (설정 완료 후 사용)
+  const [user, setUser] = useState(null);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(null);
+  const [firebaseEnabled, setFirebaseEnabled] = useState(true); // Firebase 설정 완료
+
+  // 현재 책 정보 가져오기
+  const currentBook = bookList.find(b => b.name === book) || bookList[0];
+  const chapters = Array.from({ length: currentBook.chapters }, (_, i) => i + 1);
+
+  // Firebase 데이터 동기화 함수 (Firebase 설정 완료 후 활성화)
+  const syncToCloud = useCallback(async () => {
+    if (!firebaseEnabled || !user) return;
+
+    setIsSyncing(true);
+    try {
+      // Firebase가 활성화되면 이 부분의 주석을 해제하세요
+      /*
+      await saveUserData(user.uid, {
+        highlights,
+        notes,
+        readingPlan,
+        chatRooms,
+        unreadMessages
+      });
+      */
+      setLastSyncTime(new Date().toISOString());
+    } catch (error) {
+      console.error('동기화 오류:', error);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [firebaseEnabled, user, highlights, notes, readingPlan, chatRooms, unreadMessages]);
+
+  // 클라우드에서 데이터 불러오기
+  const loadFromCloud = useCallback(async () => {
+    if (!firebaseEnabled || !user) return;
+
+    try {
+      // Firebase가 활성화되면 이 부분의 주석을 해제하세요
+      /*
+      const data = await loadUserData(user.uid);
+      if (data) {
+        if (data.highlights) setHighlights(data.highlights);
+        if (data.notes) setNotes(data.notes);
+        if (data.readingPlan) setReadingPlan(data.readingPlan);
+        if (data.chatRooms) setChatRooms(data.chatRooms);
+        if (data.unreadMessages) setUnreadMessages(data.unreadMessages);
+      }
+      */
+    } catch (error) {
+      console.error('데이터 불러오기 오류:', error);
+    }
+  }, [firebaseEnabled, user]);
+
+  // 로그인 처리
+  const handleGoogleLogin = async () => {
+    if (!firebaseEnabled) {
+      alert('Firebase 설정이 필요합니다. FIREBASE_SETUP.md 파일을 참고하세요.');
+      return;
+    }
+
+    try {
+      const loggedInUser = await signInWithGoogle();
+      setUser(loggedInUser);
+      setShowLoginModal(false);
+    } catch (error) {
+      console.error('로그인 오류:', error);
+      alert('로그인에 실패했습니다.');
+    }
+  };
+
+  // 채팅에서 사용할 로그인 핸들러
+  const handleGoogleSignIn = handleGoogleLogin;
+
+  // 로그아웃 처리
+  const handleLogout = async () => {
+    try {
+      await logOut();
+      setUser(null);
+    } catch (error) {
+      console.error('로그아웃 오류:', error);
+    }
+  };
+
+  // Firebase 인증 상태 감지
+  useEffect(() => {
+    if (!firebaseEnabled) return;
+
+    const unsubscribe = onAuthChange((currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        loadFromCloud();
+      }
+    });
+    return () => unsubscribe();
+  }, [firebaseEnabled, loadFromCloud]);
+
+  // 데이터 변경 시 자동 동기화 (디바운스)
+  useEffect(() => {
+    if (!firebaseEnabled || !user) return;
+
+    const timeoutId = setTimeout(() => {
+      syncToCloud();
+    }, 2000); // 2초 후 동기화
+
+    return () => clearTimeout(timeoutId);
+  }, [firebaseEnabled, user, highlights, notes, readingPlan, chatRooms, syncToCloud]);
+
+  // Bolls Life API에서 성경 데이터 가져오기
+  const fetchBibleData = async (bookNum, chapterNum, translationCode) => {
+    const cacheKey = `${translationCode}_${bookNum}_${chapterNum}`;
+
+    // 캐시에 있으면 캐시에서 반환
+    if (bibleCache[cacheKey]) {
+      return bibleCache[cacheKey];
+    }
+
+    // Bolls Life API: https://bolls.life/get-text/{번역본}/{책번호}/{장}/
+    const url = `https://bolls.life/get-text/${translationCode}/${bookNum}/${chapterNum}/`;
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+
+      // 캐시에 저장
+      setBibleCache(prev => ({ ...prev, [cacheKey]: data }));
+      return data;
+    } catch (error) {
+      console.error('Failed to fetch bible data:', error);
+      throw error;
+    }
+  };
+
+  // 현재 장의 절들 로드
+  useEffect(() => {
+    const loadVerses = async () => {
+      setIsLoading(true);
+      setLoadError(null);
+
+      try {
+        // 번역본 코드 결정: 개역한글 = KRV, NIV = NIV
+        const translationCode = translation === 'NIV' ? 'NIV' : 'KRV';
+        const data = await fetchBibleData(currentBook.bookNum, chapter, translationCode);
+
+        // Bolls API 응답: [{pk, verse, text}, ...]
+        if (data && Array.isArray(data)) {
+          const versesObj = {};
+          data.forEach((item) => {
+            // HTML 태그 제거 (예: <br/>)
+            const cleanText = item.text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+            versesObj[item.verse] = cleanText;
+          });
+          setVerses(versesObj);
+        } else {
+          setVerses({});
+        }
+      } catch (error) {
+        setLoadError('성경 데이터를 불러오는데 실패했습니다.');
+        setVerses({});
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadVerses();
+  }, [book, chapter, translation, currentBook.bookNum]);
+
+  // Load data from localStorage
+  useEffect(() => {
+    const savedHighlights = localStorage.getItem('bible_highlights');
+    const savedNotes = localStorage.getItem('bible_notes');
+    const savedReadingPlan = localStorage.getItem('bible_reading_plan');
+    const savedChatRooms = localStorage.getItem('bible_chat_rooms');
+    const savedUnreadMessages = localStorage.getItem('bible_unread_messages');
+    if (savedHighlights) setHighlights(JSON.parse(savedHighlights));
+    if (savedNotes) setNotes(JSON.parse(savedNotes));
+    if (savedReadingPlan) setReadingPlan(JSON.parse(savedReadingPlan));
+    if (savedChatRooms) setChatRooms(JSON.parse(savedChatRooms));
+    if (savedUnreadMessages) setUnreadMessages(JSON.parse(savedUnreadMessages));
+  }, []);
+
+  // Save to localStorage
+  useEffect(() => {
+    localStorage.setItem('bible_highlights', JSON.stringify(highlights));
+  }, [highlights]);
+
+  useEffect(() => {
+    localStorage.setItem('bible_notes', JSON.stringify(notes));
+  }, [notes]);
+
+  useEffect(() => {
+    localStorage.setItem('bible_reading_plan', JSON.stringify(readingPlan));
+  }, [readingPlan]);
+
+  useEffect(() => {
+    localStorage.setItem('bible_chat_rooms', JSON.stringify(chatRooms));
+  }, [chatRooms]);
+
+  useEffect(() => {
+    localStorage.setItem('bible_unread_messages', JSON.stringify(unreadMessages));
+  }, [unreadMessages]);
+
+  // 현재 채팅방 열람 시 읽음 처리
+  useEffect(() => {
+    if (currentChatId && currentTab === 'ai') {
+      setUnreadMessages(prev => {
+        const updated = { ...prev };
+        delete updated[currentChatId];
+        return updated;
+      });
+    }
+  }, [currentChatId, currentTab]);
+
+  const getVerseKey = (book, chapter, verse) => `${book}_${chapter}_${verse}`;
+  const getChapterKey = (book, chapter) => `${book}_${chapter}`;
+
+  // 현재 채팅방 가져오기
+  const currentChat = chatRooms.find(room => room.id === currentChatId);
+
+  // 읽지 않은 메시지 총 개수 계산
+  const totalUnreadCount = Object.values(unreadMessages).reduce((sum, count) => sum + count, 0);
+
+  // 특정 절에 연결된 채팅 찾기
+  const getChatForVerse = (bookName, chapterNum, verseNum) => {
+    const verseRef = `${bookName} ${chapterNum}:${verseNum}`;
+    return chatRooms.find(room => {
+      // 정확히 해당 절만 선택한 채팅
+      if (room.verseRef === verseRef) return true;
+      // 범위에 포함된 경우 (예: "창세기 1:1-5")
+      const rangeMatch = room.verseRef.match(/(.+) (\d+):(\d+)-(\d+)/);
+      if (rangeMatch) {
+        const [, roomBook, roomChapter, startV, endV] = rangeMatch;
+        if (roomBook === bookName && parseInt(roomChapter) === chapterNum) {
+          const start = parseInt(startV);
+          const end = parseInt(endV);
+          if (verseNum >= start && verseNum <= end) return true;
+        }
+      }
+      return false;
+    });
+  };
+
+  // 드래그 시작
+  const handleDragStart = (verse, e) => {
+    // 마우스 이벤트만 기본 동작 방지 (터치는 스크롤 허용)
+    if (e.type === 'mousedown') {
+      e.preventDefault();
+    }
+    dragStartTimeRef.current = Date.now();
+    setIsDragging(true);
+    setDragStartVerse(verse);
+    setDragEndVerse(verse);
+    setDragMoved(false);
+  };
+
+  // 드래그 중 (마우스/터치 이동)
+  const handleDragMove = (verse) => {
+    if (isDragging && dragStartVerse !== null) {
+      setDragEndVerse(verse);
+      // 드래그가 실제로 이동했을 때만 범위 선택
+      if (verse !== dragStartVerse) {
+        setDragMoved(true);
+        const start = Math.min(dragStartVerse, verse);
+        const end = Math.max(dragStartVerse, verse);
+        const range = [];
+        for (let i = start; i <= end; i++) {
+          range.push(i);
+        }
+        setSelectedVerses(range);
+        setShowVerseMenu(false);
+      }
+    }
+  };
+
+  // 드래그 종료
+  const handleDragEnd = () => {
+    // 드래그가 실제로 이동했고 범위 선택된 경우에만 메뉴 표시
+    if (dragMoved && selectedVerses.length > 0) {
+      setShowVerseMenu(true);
+    }
+
+    setIsDragging(false);
+    setDragStartVerse(null);
+    setDragEndVerse(null);
+    setDragMoved(false);
+    dragStartTimeRef.current = null;
+  };
+
+  // 절 선택/해제 토글 (단일 클릭)
+  const handleVersePress = (verse, e) => {
+    setSelectedVerses(prev => {
+      if (prev.includes(verse)) {
+        // 이미 선택된 구절을 다시 클릭하면 선택 해제
+        const newSelection = prev.filter(v => v !== verse);
+        if (newSelection.length === 0) {
+          setShowVerseMenu(false);
+        } else {
+          // 선택이 남아있으면 메뉴 유지
+          setShowVerseMenu(true);
+        }
+        return newSelection;
+      } else {
+        // 새로운 구절 선택 - 기존 선택에 추가 (복수 선택)
+        setShowVerseMenu(true);
+        return [...prev, verse].sort((a, b) => a - b);
+      }
+    });
+  };
+
+  // 메모 아이콘 클릭 -> 해당 절 선택하고 메뉴 표시
+  const handleNoteIndicatorClick = (e, verseKey) => {
+    e.stopPropagation();
+    const [, , v] = verseKey.split('_');
+    setSelectedVerses([parseInt(v)]);
+    setShowVerseMenu(true);
+  };
+
+  // 채팅 아이콘 클릭 -> 해당 절 선택하고 메뉴 표시
+  const handleChatIndicatorClick = (e, verseNum) => {
+    e.stopPropagation();
+    setSelectedVerses([verseNum]);
+    setShowVerseMenu(true);
+  };
+
+  // 기존 메모 열기
+  const openExistingNote = (verseKey) => {
+    setNoteText(notes[verseKey] || '');
+    setShowNoteModal(true);
+  };
+
+  // 기존 채팅으로 이동
+  const goToExistingChat = (chatRoom) => {
+    setCurrentChatId(chatRoom.id);
+    setShowVerseMenu(false);
+    setSelectedVerses([]);
+    setCurrentTab('ai');
+  };
+
+  // 선택된 절들에 대한 기존 메모 가져오기
+  const getExistingNotes = () => {
+    return selectedVerses
+      .map(v => {
+        const key = getVerseKey(book, chapter, v);
+        return notes[key] ? { verse: v, key, content: notes[key] } : null;
+      })
+      .filter(Boolean);
+  };
+
+  // 선택된 절들에 대한 기존 채팅 가져오기
+  const getExistingChats = () => {
+    const chats = [];
+    selectedVerses.forEach(v => {
+      const chat = getChatForVerse(book, chapter, v);
+      if (chat && !chats.find(c => c.id === chat.id)) {
+        chats.push(chat);
+      }
+    });
+    return chats;
+  };
+
+  // 선택된 절들의 텍스트 가져오기
+  const getSelectedVersesText = () => {
+    return selectedVerses.map(v => `${v}절: ${verses[v]}`).join('\n');
+  };
+
+  // 선택된 절들의 레퍼런스 문자열
+  const getSelectedVersesRef = () => {
+    if (selectedVerses.length === 0) return '';
+    if (selectedVerses.length === 1) return `${book} ${chapter}:${selectedVerses[0]}`;
+
+    const ranges = [];
+    let start = selectedVerses[0];
+    let end = selectedVerses[0];
+
+    for (let i = 1; i < selectedVerses.length; i++) {
+      if (selectedVerses[i] === end + 1) {
+        end = selectedVerses[i];
+      } else {
+        ranges.push(start === end ? `${start}` : `${start}-${end}`);
+        start = selectedVerses[i];
+        end = selectedVerses[i];
+      }
+    }
+    ranges.push(start === end ? `${start}` : `${start}-${end}`);
+
+    return `${book} ${chapter}:${ranges.join(',')}`;
+  };
+
+  const handleHighlight = (colorIndex) => {
+    selectedVerses.forEach(verse => {
+      const key = getVerseKey(book, chapter, verse);
+      setHighlights(prev => ({
+        ...prev,
+        [key]: colorIndex
+      }));
+    });
+    setShowVerseMenu(false);
+    setSelectedVerses([]);
+  };
+
+  const handleRemoveHighlight = () => {
+    selectedVerses.forEach(verse => {
+      const key = getVerseKey(book, chapter, verse);
+      setHighlights(prev => {
+        const newHighlights = { ...prev };
+        delete newHighlights[key];
+        return newHighlights;
+      });
+    });
+    setShowVerseMenu(false);
+    setSelectedVerses([]);
+  };
+
+  const handleAddNote = () => {
+    setShowVerseMenu(false);
+    if (selectedVerses.length === 1) {
+      const key = getVerseKey(book, chapter, selectedVerses[0]);
+      const note = notes[key];
+      if (note && typeof note === 'object') {
+        setNoteTitle(note.title || '');
+        setNoteText(note.content || '');
+      } else if (typeof note === 'string') {
+        // 기존 문자열 형식 메모 호환
+        setNoteTitle('');
+        setNoteText(note);
+      } else {
+        setNoteTitle('');
+        setNoteText('');
+      }
+    } else {
+      setNoteTitle('');
+      setNoteText('');
+    }
+    setShowNoteModal(true);
+  };
+
+  const saveNote = () => {
+    if (selectedVerses.length > 0) {
+      const key = getVerseKey(book, chapter, selectedVerses[0]);
+      if (noteText.trim()) {
+        const verseRef = getSelectedVersesRef();
+        setNotes(prev => ({
+          ...prev,
+          [key]: {
+            title: noteTitle.trim() || verseRef,
+            content: noteText,
+            verseRef: verseRef
+          }
+        }));
+      } else {
+        setNotes(prev => {
+          const newNotes = { ...prev };
+          delete newNotes[key];
+          return newNotes;
+        });
+      }
+    }
+    setShowNoteModal(false);
+    setSelectedVerses([]);
+    setNoteText('');
+    setNoteTitle('');
+  };
+
+  // 새 채팅방 생성하고 AI 탭으로 이동
+  const handleAskAI = () => {
+    const versesText = getSelectedVersesText();
+    const verseRef = getSelectedVersesRef();
+
+    // 새 채팅방 생성
+    const newChatRoom = {
+      id: Date.now().toString(),
+      title: verseRef,
+      verseRef: verseRef,
+      versesText: versesText,
+      translation: translation,
+      createdAt: new Date().toISOString(),
+      messages: []
+    };
+
+    setChatRooms(prev => [newChatRoom, ...prev]);
+    setCurrentChatId(newChatRoom.id);
+    setShowVerseMenu(false);
+    setSelectedVerses([]);
+    setCurrentTab('ai');
+  };
+
+  // 채팅방 삭제
+  const deleteChatRoom = (chatId) => {
+    setChatRooms(prev => prev.filter(room => room.id !== chatId));
+    if (currentChatId === chatId) {
+      setCurrentChatId(chatRooms.length > 1 ? chatRooms.find(r => r.id !== chatId)?.id : null);
+    }
+    setUnreadMessages(prev => {
+      const updated = { ...prev };
+      delete updated[chatId];
+      return updated;
+    });
+  };
+
+  const toggleReadingPlan = (bookName, chapterNum) => {
+    const key = getChapterKey(bookName, chapterNum);
+    setReadingPlan(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  // AI 시스템 프롬프트
+  const getAISystemPrompt = (chatRoom) => {
+    return `당신은 성경에 대해 깊이 있는 지식을 가진 신뢰할 수 있는 성경 선생님입니다.
+
+## 핵심 원칙
+1. **팩트체크 우선**: 답변하기 전에 반드시 성경적 정확성을 확인하세요.
+2. **근거 제시**: 모든 주장에는 성경 구절이나 신뢰할 수 있는 출처를 명시하세요.
+3. **겸손한 태도**: 확실하지 않은 부분은 솔직히 인정하세요.
+
+## 답변 형식
+답변할 때 다음 구조를 따라주세요:
+
+### 답변
+[질문에 대한 명확하고 이해하기 쉬운 답변]
+
+### 성경적 근거
+- [관련 성경 구절 1] - 간단한 설명
+- [관련 성경 구절 2] - 간단한 설명
+
+### 참고 배경
+- 역사적/문화적 맥락 (해당되는 경우)
+- 원어(히브리어/그리스어) 의미 (해당되는 경우)
+
+### 유의사항
+[해석의 다양성이나 주의할 점이 있다면 언급]
+
+---
+
+현재 사용자가 선택한 말씀: ${chatRoom.verseRef} (${chatRoom.translation})
+${chatRoom.versesText}
+
+답변은 한국어로 해주시고, 따뜻하면서도 신뢰할 수 있는 톤으로 대화해주세요.
+불확실한 해석이나 논쟁이 있는 부분은 여러 관점을 균형 있게 제시해주세요.`;
+  };
+
+  const sendMessage = async (message, chatId) => {
+    if (!message.trim() || chatLoadingStates[chatId]) return;
+
+    const chatRoom = chatRooms.find(r => r.id === chatId);
+    if (!chatRoom) return;
+
+    const updatedMessages = [...chatRoom.messages, { role: 'user', content: message }];
+    setChatRooms(prev => prev.map(room =>
+      room.id === chatId ? { ...room, messages: updatedMessages } : room
+    ));
+
+    setChatLoadingStates(prev => ({ ...prev, [chatId]: true }));
+
+    try {
+      // Groq API 사용 (무료, 빠름)
+      const GROQ_API_KEY = localStorage.getItem('groq_api_key');
+
+      if (!GROQ_API_KEY) {
+        // API 키가 없으면 안내 메시지
+        setChatRooms(prev => prev.map(room =>
+          room.id === chatId
+            ? { ...room, messages: [...updatedMessages, {
+                role: 'assistant',
+                content: `🔑 AI 기능을 사용하려면 Groq API 키가 필요합니다.
+
+**무료로 API 키 받는 방법:**
+1. https://console.groq.com 접속
+2. 구글/깃허브 계정으로 로그인
+3. "API Keys" 메뉴에서 새 키 생성
+4. 아래 설정 버튼을 눌러 API 키 입력
+
+API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
+              }] }
+            : room
+        ));
+        setChatLoadingStates(prev => ({ ...prev, [chatId]: false }));
+        return;
+      }
+
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${GROQ_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          max_tokens: 2000,
+          messages: [
+            { role: 'system', content: getAISystemPrompt(chatRoom) },
+            ...updatedMessages.map(m => ({ role: m.role, content: m.content }))
+          ]
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error.message || 'API 오류');
+      }
+
+      const aiResponse = data.choices?.[0]?.message?.content || '죄송합니다. 응답을 가져오는 중 문제가 발생했습니다.';
+
+      setChatRooms(prev => prev.map(room =>
+        room.id === chatId
+          ? { ...room, messages: [...updatedMessages, { role: 'assistant', content: aiResponse }] }
+          : room
+      ));
+
+      if (chatId !== currentChatId || currentTab !== 'ai') {
+        setUnreadMessages(prev => ({
+          ...prev,
+          [chatId]: (prev[chatId] || 0) + 1
+        }));
+      }
+    } catch (error) {
+      console.error('AI Error:', error);
+      setChatRooms(prev => prev.map(room =>
+        room.id === chatId
+          ? { ...room, messages: [...updatedMessages, { role: 'assistant', content: `죄송합니다. 오류가 발생했습니다: ${error.message}\n\n다시 시도해주세요.` }] }
+          : room
+      ));
+    }
+
+    setChatLoadingStates(prev => ({ ...prev, [chatId]: false }));
+  };
+
+  const closeVerseMenu = () => {
+    setShowVerseMenu(false);
+    setSelectedVerses([]);
+  };
+
+  // Tab Components
+  const BibleTab = () => (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Navigation Header */}
+      <div className="bg-gradient-to-r from-amber-800 to-amber-900 text-white px-4 py-3">
+        <div className="flex items-center justify-between">
+          <div className="relative">
+            <button
+              onClick={() => setShowBookDropdown(!showBookDropdown)}
+              className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg transition-all"
+            >
+              <span className="font-semibold">{book} {chapter}장</span>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {/* Dropdown Menu */}
+            {showBookDropdown && (
+              <div className="absolute top-full left-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl z-50 max-h-96 overflow-y-auto">
+                <div className="p-4 space-y-4">
+                  {bookList.map(b => {
+                    const bookChapters = Array.from({ length: b.chapters }, (_, i) => i + 1);
+                    return (
+                      <div key={b.name} className="border-b border-gray-100 pb-3 last:border-0">
+                        <h4 className="font-semibold text-gray-800 mb-2 text-sm">{b.name}</h4>
+                        <div className="flex flex-wrap gap-2">
+                          {bookChapters.map(c => (
+                            <button
+                              key={c}
+                              onClick={() => {
+                                setBook(b.name);
+                                setChapter(c);
+                                setShowBookDropdown(false);
+                                setSelectedVerses([]);
+                                setShowVerseMenu(false);
+                              }}
+                              className={`w-9 h-9 rounded-lg text-xs transition-all ${
+                                book === b.name && chapter === c
+                                  ? 'bg-amber-500 text-white font-bold'
+                                  : readingPlan[getChapterKey(b.name, c)]
+                                    ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                              }`}
+                            >
+                              {c}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {/* 동기화 상태 표시 */}
+            {user && (
+              <div className="flex items-center gap-1 bg-white/10 px-2 py-1 rounded-lg">
+                {isSyncing ? (
+                  <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <svg className="w-3 h-3 text-green-300" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </div>
+            )}
+
+            {/* 로그인/프로필 버튼 */}
+            <button
+              onClick={() => user ? setShowLoginModal(true) : setShowLoginModal(true)}
+              className="bg-white/10 hover:bg-white/20 p-2 rounded-lg transition-all"
+              title={user ? user.displayName : '로그인'}
+            >
+              {user ? (
+                <img src={user.photoURL} alt="" className="w-5 h-5 rounded-full" />
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              )}
+            </button>
+
+            <button
+              onClick={() => setShowTranslationPicker(true)}
+              className="bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg text-sm transition-all"
+            >
+              {translation}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 드롭다운 열려있을 때 배경 클릭으로 닫기 */}
+      {showBookDropdown && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setShowBookDropdown(false)}
+        />
+      )}
+
+      {/* Bible Content */}
+      <div className="flex-1 overflow-y-auto bg-gradient-to-b from-amber-50/50 to-white" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="p-4 max-w-2xl mx-auto">
+          <h2 className="text-center text-xl font-serif text-amber-900 mb-6 pb-3 border-b border-amber-200">
+            {book} {chapter}장
+          </h2>
+
+          {/* 로딩 상태 */}
+          {isLoading && (
+            <div className="text-center py-12">
+              <div className="inline-block w-8 h-8 border-4 border-amber-200 border-t-amber-600 rounded-full animate-spin"></div>
+              <p className="mt-4 text-gray-500">말씀을 불러오는 중...</p>
+            </div>
+          )}
+
+          {/* 에러 상태 */}
+          {loadError && !isLoading && (
+            <div className="text-center py-12">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <p className="text-red-600 mb-2">{loadError}</p>
+              <button
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600"
+              >
+                다시 시도
+              </button>
+            </div>
+          )}
+
+          {/* 성경 내용 */}
+          {!isLoading && !loadError && (
+            <>
+              <div
+                className="space-y-4 pb-6 select-none"
+              >
+                {Object.entries(verses).map(([verse, text]) => {
+                  const verseNum = parseInt(verse);
+                  const key = getVerseKey(book, chapter, verse);
+                  const highlightIndex = highlights[key];
+                  const hasNote = notes[key];
+                  const linkedChat = getChatForVerse(book, chapter, verseNum);
+                  const isSelected = selectedVerses.includes(verseNum);
+                  const highlightStyle = highlightIndex !== undefined
+                    ? {
+                        backgroundColor: highlightColors[highlightIndex].color,
+                        borderLeft: `3px solid ${highlightColors[highlightIndex].border}`
+                      }
+                    : {};
+
+                  return (
+                    <div
+                      key={verse}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleDragStart(verseNum, e);
+                      }}
+                      onMouseUp={(e) => {
+                        if (!dragMoved) {
+                          handleVersePress(verseNum, e);
+                        }
+                        handleDragEnd();
+                      }}
+                      onMouseEnter={() => {
+                        if (isDragging) {
+                          handleDragMove(verseNum);
+                        }
+                      }}
+                      onTouchStart={(e) => {
+                        const touch = e.touches[0];
+                        touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+                        handleDragStart(verseNum, e);
+                      }}
+                      onTouchMove={(e) => {
+                        if (isDragging) {
+                          const touch = e.touches[0];
+                          const deltaX = Math.abs(touch.clientX - touchStartPosRef.current.x);
+                          const deltaY = Math.abs(touch.clientY - touchStartPosRef.current.y);
+
+                          if (deltaX > deltaY && deltaX > 10) {
+                            e.preventDefault();
+                            const element = document.elementFromPoint(touch.clientX, touch.clientY);
+                            const verseEl = element?.closest('[data-verse]');
+                            if (verseEl) {
+                              handleDragMove(parseInt(verseEl.dataset.verse));
+                            }
+                          }
+                        }
+                      }}
+                      onTouchEnd={(e) => {
+                        if (!dragMoved) {
+                          handleVersePress(verseNum, e);
+                        }
+                        handleDragEnd();
+                      }}
+                      data-verse={verseNum}
+                      className={`p-3 rounded-lg cursor-pointer transition-all duration-200 select-none ${
+                        isSelected ? 'ring-2 ring-amber-400 bg-amber-100/50' : ''
+                      }`}
+                      style={!isSelected ? highlightStyle : { ...highlightStyle, backgroundColor: '#FEF3C7' }}
+                    >
+                      <div className="flex gap-2">
+                        <span className={`font-bold text-sm min-w-[24px] ${isSelected ? 'text-amber-700' : 'text-amber-600'}`}>
+                          {isSelected && '✓'}{verse}
+                        </span>
+                        <p className="text-gray-800 leading-relaxed font-serif text-lg flex-1">{text}</p>
+                        {/* 메모/채팅 표시 아이콘 */}
+                        <div className="flex items-start gap-1 flex-shrink-0">
+                          {hasNote && (
+                            <button
+                              onClick={(e) => handleNoteIndicatorClick(e, key)}
+                              className="w-2.5 h-2.5 rounded-full bg-yellow-400 hover:bg-yellow-500 transition-colors"
+                              title="메모 보기"
+                            />
+                          )}
+                          {linkedChat && (
+                            <button
+                              onClick={(e) => handleChatIndicatorClick(e, verseNum)}
+                              className="w-2.5 h-2.5 rounded-full bg-indigo-400 hover:bg-indigo-500 transition-colors"
+                              title="채팅 보기"
+                            />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* 읽기 완료 버튼 */}
+              {Object.keys(verses).length > 0 && (
+                <div className="py-6 border-t border-amber-200">
+                  <button
+                    onClick={() => toggleReadingPlan(book, chapter)}
+                    className={`w-full py-4 rounded-xl font-medium transition-all duration-300 flex items-center justify-center gap-2 ${
+                      readingPlan[getChapterKey(book, chapter)]
+                        ? 'bg-emerald-500 text-white hover:bg-emerald-600'
+                        : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                    }`}
+                  >
+                    {readingPlan[getChapterKey(book, chapter)] ? (
+                      <>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        이 장 읽기 완료
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                        </svg>
+                        이 장 읽기 완료 표시
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {/* Chapter Navigation */}
+              <div className="flex justify-between items-center mt-4 pt-4 border-t border-amber-200 pb-20">
+                <button
+                  onClick={() => chapter > 1 && setChapter(chapter - 1)}
+                  disabled={chapter <= 1}
+                  className={`flex items-center gap-1 px-4 py-2 rounded-lg transition-all ${
+                    chapter > 1
+                      ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                  이전
+                </button>
+                <span className="text-amber-700 font-medium">{chapter} / {currentBook.chapters}</span>
+                <button
+                  onClick={() => chapter < currentBook.chapters && setChapter(chapter + 1)}
+                  disabled={chapter >= currentBook.chapters}
+                  className={`flex items-center gap-1 px-4 py-2 rounded-lg transition-all ${
+                    chapter < currentBook.chapters
+                      ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  다음
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Verse Action Menu */}
+      {showVerseMenu && (
+        <div className="bg-white border-t border-gray-200 shadow-lg animate-slide-up">
+          <div className="p-4 max-w-lg mx-auto">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold text-gray-800">
+                {getSelectedVersesRef()}
+                <span className="text-sm font-normal text-gray-500 ml-2">
+                  ({selectedVerses.length}절 선택)
+                </span>
+              </h3>
+              <button
+                onClick={closeVerseMenu}
+                className="p-1 hover:bg-gray-100 rounded-full"
+              >
+                <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="mb-3">
+              <p className="text-xs text-gray-500 mb-2">하이라이트</p>
+              <div className="flex gap-2">
+                {highlightColors.map((color, index) => (
+                  <button
+                    key={index}
+                    onClick={() => handleHighlight(index)}
+                    className="w-8 h-8 rounded-full border-2 transition-transform hover:scale-110"
+                    style={{ backgroundColor: color.color, borderColor: color.border }}
+                  />
+                ))}
+                <button
+                  onClick={handleRemoveHighlight}
+                  className="w-8 h-8 rounded-full border-2 border-gray-300 bg-white flex items-center justify-center hover:bg-gray-100"
+                >
+                  <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* 기존 메모/채팅 표시 */}
+            {(getExistingNotes().length > 0 || getExistingChats().length > 0) && (
+              <div className="mb-3 space-y-2">
+                {getExistingNotes().length > 0 && (
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">기존 메모</p>
+                    {getExistingNotes().map(note => (
+                      <button
+                        key={note.key}
+                        onClick={() => openExistingNote(note.key)}
+                        className="w-full text-left p-2 bg-yellow-50 border border-yellow-200 rounded-lg mb-1 hover:bg-yellow-100 transition-all"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-yellow-400 flex-shrink-0" />
+                          <span className="text-xs text-yellow-700 font-medium">{note.verse}절</span>
+                        </div>
+                        <p className="text-xs text-gray-600 mt-1 line-clamp-1 ml-4">{note.content}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {getExistingChats().length > 0 && (
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">기존 채팅</p>
+                    {getExistingChats().map(chat => (
+                      <button
+                        key={chat.id}
+                        onClick={() => goToExistingChat(chat)}
+                        className="w-full text-left p-2 bg-indigo-50 border border-indigo-200 rounded-lg mb-1 hover:bg-indigo-100 transition-all"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-indigo-400 flex-shrink-0" />
+                          <span className="text-xs text-indigo-700 font-medium">{chat.title}</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1 ml-4">{chat.messages.length}개 메시지</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={handleAddNote}
+                className="flex items-center justify-center gap-2 p-3 bg-amber-100 rounded-xl text-amber-800 hover:bg-amber-200 transition-all text-sm font-medium"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                새 메모
+              </button>
+              <button
+                onClick={handleAskAI}
+                className="flex items-center justify-center gap-2 p-3 bg-indigo-100 rounded-xl text-indigo-700 hover:bg-indigo-200 transition-all text-sm font-medium"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                새 AI 질문
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Note Modal - BibleTab 외부에서 렌더링하여 재생성 방지 */}
+
+      {/* Translation Picker */}
+      {showTranslationPicker && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center" onClick={() => setShowTranslationPicker(false)}>
+          <div className="bg-white w-full max-w-lg rounded-t-3xl p-6" onClick={e => e.stopPropagation()}>
+            <div className="w-12 h-1 bg-gray-300 rounded-full mx-auto mb-4" />
+            <h3 className="text-center text-lg font-semibold text-gray-800 mb-4">번역 선택</h3>
+            <div className="space-y-2">
+              {['개역한글', 'NIV'].map(t => (
+                <button
+                  key={t}
+                  onClick={() => { setTranslation(t); setShowTranslationPicker(false); }}
+                  className={`w-full p-4 rounded-xl text-left transition-all ${
+                    translation === t
+                      ? 'bg-amber-100 text-amber-800 font-semibold'
+                      : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  {t}
+                  {t === '개역한글' && <span className="text-sm text-gray-500 ml-2">(한국어)</span>}
+                  {t === 'NIV' && <span className="text-sm text-gray-500 ml-2">(English)</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Login/Profile Modal */}
+      {showLoginModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowLoginModal(false)}>
+          <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            {user ? (
+              // 로그인된 상태 - 프로필 표시
+              <div className="text-center">
+                <img src={user.photoURL} alt="" className="w-16 h-16 rounded-full mx-auto mb-3" />
+                <h3 className="text-lg font-semibold text-gray-800">{user.displayName}</h3>
+                <p className="text-sm text-gray-500 mb-4">{user.email}</p>
+
+                <div className="bg-green-50 border border-green-200 rounded-xl p-3 mb-4">
+                  <div className="flex items-center justify-center gap-2 text-green-700">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span className="text-sm font-medium">클라우드 동기화 활성화</span>
+                  </div>
+                  {lastSyncTime && (
+                    <p className="text-xs text-green-600 mt-1">
+                      마지막 동기화: {new Date(lastSyncTime).toLocaleTimeString('ko-KR')}
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  onClick={syncToCloud}
+                  disabled={isSyncing}
+                  className="w-full py-3 bg-indigo-100 text-indigo-700 rounded-xl mb-2 hover:bg-indigo-200 transition-all flex items-center justify-center gap-2"
+                >
+                  {isSyncing ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" />
+                      동기화 중...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      지금 동기화
+                    </>
+                  )}
+                </button>
+
+                <button
+                  onClick={handleLogout}
+                  className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-all"
+                >
+                  로그아웃
+                </button>
+              </div>
+            ) : (
+              // 로그인 안된 상태
+              <div className="text-center">
+                <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-2">클라우드 동기화</h3>
+                <p className="text-sm text-gray-500 mb-4">
+                  로그인하면 다른 기기에서도<br/>
+                  동일한 하이라이트, 메모, 읽기표를<br/>
+                  사용할 수 있습니다.
+                </p>
+
+                {!firebaseEnabled && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 text-left">
+                    <p className="text-sm text-amber-700 font-medium mb-1">⚠️ Firebase 설정 필요</p>
+                    <p className="text-xs text-amber-600">
+                      클라우드 동기화를 사용하려면 Firebase 설정이 필요합니다.
+                      프로젝트 폴더의 <strong>FIREBASE_SETUP.md</strong> 파일을 참고하세요.
+                    </p>
+                  </div>
+                )}
+
+                <button
+                  onClick={handleGoogleLogin}
+                  className="w-full py-3 bg-white border-2 border-gray-200 rounded-xl hover:bg-gray-50 transition-all flex items-center justify-center gap-3"
+                >
+                  <svg className="w-5 h-5" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                  </svg>
+                  <span className="text-gray-700 font-medium">Google로 로그인</span>
+                </button>
+
+                <button
+                  onClick={() => setShowLoginModal(false)}
+                  className="w-full py-3 text-gray-500 mt-2"
+                >
+                  나중에 하기
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const AiTab = () => {
+    const [localInput, setLocalInput] = useState('');
+    const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+    const [apiKeyInput, setApiKeyInput] = useState(localStorage.getItem('groq_api_key') || '');
+    const chatEndRef = useRef(null);
+
+    const saveApiKey = () => {
+      localStorage.setItem('groq_api_key', apiKeyInput);
+      setShowApiKeyModal(false);
+    };
+
+    useEffect(() => {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [currentChat?.messages]);
+
+    const handleSend = () => {
+      if (currentChatId && localInput.trim()) {
+        sendMessage(localInput.trim(), currentChatId);
+        setLocalInput('');
+      }
+    };
+
+    const handleKeyDown = (e) => {
+      // 한글 조합 중(isComposing)일 때는 무시
+      if (e.nativeEvent.isComposing) return;
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSend();
+      }
+    };
+
+    return (
+      <div className="flex-1 flex flex-col bg-gradient-to-b from-indigo-50 to-white">
+        {/* AI Header */}
+        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-3 sticky top-0 z-10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="font-semibold text-sm">성경 AI 도우미</h2>
+                <p className="text-xs text-white/80">
+                  {currentChat ? currentChat.title : '채팅을 선택하세요'}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowApiKeyModal(true)}
+                className="bg-white/10 hover:bg-white/20 p-2 rounded-lg transition-all"
+                title="API 키 설정"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setShowChatList(true)}
+                className="bg-white/10 hover:bg-white/20 p-2 rounded-lg transition-all relative"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+                {totalUnreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-amber-400 text-indigo-900 text-xs font-bold rounded-full flex items-center justify-center">
+                    {totalUnreadCount}
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Chat Content */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+          {!currentChat ? (
+            <div className="text-center py-12">
+              <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-10 h-10 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">성경 말씀에 대해 물어보세요</h3>
+              <p className="text-gray-500 text-sm mb-4">
+                성경 탭에서 말씀을 선택하고<br/>
+                "AI에게 질문" 버튼을 누르면<br/>
+                새로운 채팅이 시작됩니다.
+              </p>
+              {chatRooms.length > 0 && (
+                <button
+                  onClick={() => setShowChatList(true)}
+                  className="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg text-sm font-medium hover:bg-indigo-200 transition-all"
+                >
+                  이전 채팅 보기 ({chatRooms.length}개)
+                </button>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* 선택한 말씀 표시 */}
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                <div className="flex items-center gap-2 text-amber-700 mb-1">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                  </svg>
+                  <span className="font-medium text-sm">{currentChat.verseRef}</span>
+                  <span className="text-xs text-amber-600">({currentChat.translation})</span>
+                </div>
+                <p className="text-amber-900 text-sm whitespace-pre-wrap">{currentChat.versesText}</p>
+              </div>
+
+              {/* 메시지가 없을 때 질문 예시 */}
+              {currentChat.messages.length === 0 && (
+                <div className="text-center py-4">
+                  <p className="text-gray-500 text-sm mb-3">이 말씀에 대해 질문해보세요</p>
+                  <div className="space-y-2">
+                    {[
+                      "이 구절의 의미가 뭔가요?",
+                      "역사적 배경이 궁금해요",
+                      "다른 번역본과 비교해주세요"
+                    ].map((q, i) => (
+                      <button
+                        key={i}
+                        onClick={() => {
+                          if (currentChatId) {
+                            sendMessage(q, currentChatId);
+                          }
+                        }}
+                        className="w-full text-left p-3 bg-white rounded-xl text-sm text-gray-700 hover:bg-indigo-50 transition-all shadow-sm"
+                      >
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 채팅 메시지들 */}
+              {currentChat.messages.map((msg, index) => (
+                <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[90%] p-4 rounded-2xl ${
+                    msg.role === 'user'
+                      ? 'bg-indigo-500 text-white rounded-br-md'
+                      : 'bg-white shadow-md text-gray-800 rounded-bl-md'
+                  }`}>
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                  </div>
+                </div>
+              ))}
+
+              {chatLoadingStates[currentChatId] && (
+                <div className="flex justify-start">
+                  <div className="bg-white shadow-md rounded-2xl rounded-bl-md p-4">
+                    <div className="flex gap-1">
+                      <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div ref={chatEndRef} />
+            </>
+          )}
+        </div>
+
+        {/* Chat Input */}
+        {currentChat && (
+          <div className="p-4 border-t border-gray-200 bg-white">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={localInput}
+                onChange={(e) => setLocalInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="질문을 입력하세요..."
+                className="flex-1 px-4 py-3 bg-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 text-gray-800"
+              />
+              <button
+                onClick={handleSend}
+                disabled={chatLoadingStates[currentChatId] || !localInput.trim()}
+                className={`px-4 py-3 rounded-xl transition-all ${
+                  chatLoadingStates[currentChatId] || !localInput.trim()
+                    ? 'bg-gray-200 text-gray-400'
+                    : 'bg-indigo-500 text-white hover:bg-indigo-600'
+                }`}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Chat List Modal */}
+        {showChatList && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center" onClick={() => setShowChatList(false)}>
+            <div className="bg-white w-full max-w-lg rounded-t-3xl p-6 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="w-12 h-1 bg-gray-300 rounded-full mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">채팅 목록</h3>
+
+              {chatRooms.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <p>아직 채팅이 없습니다.</p>
+                  <p className="text-sm mt-1">성경 탭에서 말씀을 선택해보세요.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {chatRooms.map(room => (
+                    <div
+                      key={room.id}
+                      className={`p-4 rounded-xl border transition-all ${
+                        currentChatId === room.id
+                          ? 'border-indigo-300 bg-indigo-50'
+                          : 'border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <button
+                          onClick={() => { setCurrentChatId(room.id); setShowChatList(false); }}
+                          className="flex-1 text-left"
+                        >
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-medium text-gray-800">{room.title}</h4>
+                            {unreadMessages[room.id] && (
+                              <span className="px-2 py-0.5 bg-red-500 text-white text-xs font-bold rounded-full">
+                                {unreadMessages[room.id]}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {room.translation} · {room.messages.length}개 메시지
+                          </p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {new Date(room.createdAt).toLocaleDateString('ko-KR')}
+                          </p>
+                        </button>
+                        <button
+                          onClick={() => deleteChatRoom(room.id)}
+                          className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* API Key Modal */}
+        {showApiKeyModal && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowApiKeyModal(false)}>
+            <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">🔑 Groq API 키 설정</h3>
+              <p className="text-sm text-gray-500 mb-4">
+                무료 AI 기능을 사용하려면 Groq API 키가 필요합니다.
+              </p>
+
+              <div className="bg-indigo-50 p-3 rounded-lg mb-4">
+                <p className="text-xs text-indigo-700 font-medium mb-2">API 키 받는 방법:</p>
+                <ol className="text-xs text-indigo-600 space-y-1">
+                  <li>1. <a href="https://console.groq.com" target="_blank" rel="noopener noreferrer" className="underline">console.groq.com</a> 접속</li>
+                  <li>2. 구글/깃허브로 로그인 (무료)</li>
+                  <li>3. API Keys → Create API Key</li>
+                  <li>4. 생성된 키를 아래에 붙여넣기</li>
+                </ol>
+              </div>
+
+              <input
+                type="password"
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                placeholder="gsk_..."
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 text-gray-800 mb-4"
+              />
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowApiKeyModal(false)}
+                  className="flex-1 py-3 bg-gray-100 rounded-xl text-gray-700 hover:bg-gray-200 transition-all"
+                >
+                  취소
+                </button>
+                <button
+                  onClick={saveApiKey}
+                  className="flex-1 py-3 bg-indigo-500 rounded-xl text-white hover:bg-indigo-600 transition-all"
+                >
+                  저장
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const NotesTab = () => {
+    const allNotes = Object.entries(notes);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editTitle, setEditTitle] = useState('');
+    const [editContent, setEditContent] = useState('');
+
+    // 메모 상세 보기
+    if (showNoteDetail && selectedNoteKey) {
+      const note = notes[selectedNoteKey];
+      const noteData = typeof note === 'object' ? note : { title: '', content: note, verseRef: '' };
+      const [b, c, v] = selectedNoteKey.split('_');
+      const verseRef = noteData.verseRef || `${b} ${c}:${v}`;
+
+      return (
+        <div className="flex-1 flex flex-col bg-yellow-50/50">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-yellow-600 to-amber-600 text-white px-4 py-3 flex items-center justify-between">
+            <button
+              onClick={() => {
+                setShowNoteDetail(false);
+                setSelectedNoteKey(null);
+                setIsEditing(false);
+              }}
+              className="p-2 hover:bg-white/20 rounded-full transition-all"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <h2 className="text-lg font-semibold">메모</h2>
+            <button
+              onClick={() => {
+                if (isEditing) {
+                  // 저장
+                  setNotes(prev => ({
+                    ...prev,
+                    [selectedNoteKey]: {
+                      title: editTitle.trim() || verseRef,
+                      content: editContent,
+                      verseRef: verseRef
+                    }
+                  }));
+                  setIsEditing(false);
+                } else {
+                  // 편집 모드
+                  setEditTitle(noteData.title);
+                  setEditContent(noteData.content);
+                  setIsEditing(true);
+                }
+              }}
+              className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-all text-sm font-medium"
+            >
+              {isEditing ? '저장' : '편집'}
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto p-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="bg-white rounded-xl p-4 shadow-sm mb-4">
+              <span
+                onClick={() => {
+                  setBook(b);
+                  setChapter(parseInt(c));
+                  setCurrentTab('bible');
+                  setShowNoteDetail(false);
+                  setSelectedNoteKey(null);
+                }}
+                className="inline-block px-3 py-1.5 bg-amber-100 text-amber-700 rounded-lg text-sm font-medium cursor-pointer hover:bg-amber-200 transition-all"
+              >
+                {verseRef}
+              </span>
+            </div>
+
+            {isEditing ? (
+              <div className="space-y-4">
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  placeholder="메모 제목"
+                  className="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-400 text-gray-800 font-semibold"
+                />
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  placeholder="메모 내용"
+                  className="w-full h-96 p-3 border border-gray-300 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-amber-400 text-gray-800 leading-relaxed"
+                />
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl p-6 shadow-sm">
+                <h3 className="text-2xl font-bold text-gray-900 mb-4">{noteData.title}</h3>
+                <p className="text-gray-800 whitespace-pre-wrap leading-relaxed text-base">{noteData.content}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // 메모 목록
+    return (
+      <div className="flex-1 flex flex-col bg-yellow-50/50">
+        {/* Notes Header */}
+        <div className="bg-gradient-to-r from-yellow-600 to-amber-600 text-white px-4 py-4 sticky top-0 z-10">
+          <h2 className="text-lg font-semibold">내 메모</h2>
+          <p className="text-sm text-white/80">{allNotes.length}개의 메모</p>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+          {allNotes.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </div>
+              <p className="text-gray-500">아직 메모가 없습니다.<br/>말씀을 읽으며 메모를 추가해보세요.</p>
+            </div>
+          ) : (
+            <div className="space-y-3 pb-20">
+              {allNotes.map(([key, note]) => {
+                const [b, c, v] = key.split('_');
+                // 새로운 형식과 기존 형식 호환
+                const noteData = typeof note === 'object' ? note : { title: `${b} ${c}:${v}`, content: note, verseRef: `${b} ${c}:${v}` };
+                const preview = noteData.content.substring(0, 80) + (noteData.content.length > 80 ? '...' : '');
+
+                return (
+                  <div
+                    key={key}
+                    onClick={() => {
+                      setSelectedNoteKey(key);
+                      setShowNoteDetail(true);
+                    }}
+                    className="bg-white rounded-xl p-4 shadow-sm cursor-pointer hover:shadow-md transition-all"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="px-2 py-1 bg-amber-100 text-amber-700 rounded-lg text-xs font-medium">
+                        {noteData.verseRef}
+                      </span>
+                    </div>
+                    <h4 className="font-semibold text-gray-900 mb-1">{noteData.title}</h4>
+                    <p className="text-gray-600 text-sm line-clamp-2">{preview}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const PlanTab = () => {
+    const completedCount = Object.values(readingPlan).filter(Boolean).length;
+    const totalChapters = bookList.reduce((acc, b) => acc + b.chapters, 0);
+
+    return (
+      <div className="flex-1 flex flex-col bg-emerald-50/50">
+        {/* Plan Header */}
+        <div className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-4 py-4 sticky top-0 z-10">
+          <h2 className="text-lg font-semibold">읽기표</h2>
+          <p className="text-sm text-white/80">{completedCount} / {totalChapters} 장 완료</p>
+          <div className="mt-3 bg-white/20 rounded-full h-2 overflow-hidden">
+            <div
+              className="bg-white h-full rounded-full transition-all duration-500"
+              style={{ width: `${(completedCount / totalChapters) * 100}%` }}
+            />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <div className="space-y-4 pb-20">
+            {bookList.map(b => {
+              const bookChapters = Array.from({ length: b.chapters }, (_, i) => i + 1);
+              const bookCompleted = bookChapters.filter(c => readingPlan[getChapterKey(b.name, c)]).length;
+              return (
+                <div key={b.name} className="bg-white rounded-xl p-4 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-gray-800">{b.name}</h3>
+                    <span className="text-sm text-emerald-600">{bookCompleted}/{b.chapters}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {bookChapters.map(c => {
+                      const isCompleted = readingPlan[getChapterKey(b.name, c)];
+                      return (
+                        <button
+                          key={c}
+                          onClick={() => toggleReadingPlan(b.name, c)}
+                          className={`w-10 h-10 rounded-lg text-sm font-medium transition-all ${
+                            isCompleted
+                              ? 'bg-emerald-500 text-white shadow-md'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          {isCompleted ? '✓' : c}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // 메모용 ref (포커스 유지)
+  const noteTextareaRef = useRef(null);
+
+  // 메모 텍스트 변경 핸들러
+  const handleNoteTextChange = (e) => {
+    setNoteText(e.target.value);
+  };
+
+  return (
+    <div className="h-screen flex flex-col bg-white font-sans overflow-hidden">
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
+
+        * {
+          font-family: 'Noto Sans KR', sans-serif;
+        }
+
+        .font-serif {
+          font-family: 'Noto Serif KR', serif;
+        }
+
+        @keyframes slide-up {
+          from { transform: translateY(100%); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+
+        .animate-slide-up {
+          animation: slide-up 0.2s ease-out;
+        }
+      `}</style>
+
+      {/* Main Content */}
+      {currentTab === 'bible' && <BibleTab />}
+      {currentTab === 'ai' && <AiTab />}
+      {currentTab === 'notes' && <NotesTab />}
+      {currentTab === 'plan' && <PlanTab />}
+
+      {/* Note Modal - 최상위 레벨에서 렌더링 (재생성 방지) */}
+      {showNoteModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">
+              {getSelectedVersesRef()} 메모
+            </h3>
+            <input
+              type="text"
+              value={noteTitle}
+              onChange={(e) => setNoteTitle(e.target.value)}
+              placeholder="메모 제목 (선택사항)"
+              className="w-full p-3 mb-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-400 text-gray-800"
+            />
+            <textarea
+              ref={noteTextareaRef}
+              value={noteText}
+              onChange={handleNoteTextChange}
+              placeholder="이 말씀에 대한 생각을 적어보세요..."
+              className="w-full h-32 p-3 border border-gray-300 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-amber-400 text-gray-800"
+            />
+            <div className="flex gap-3 mt-4">
+              <button
+                onClick={() => { setShowNoteModal(false); setSelectedVerses([]); setNoteText(''); setNoteTitle(''); }}
+                className="flex-1 py-3 bg-gray-100 rounded-xl text-gray-700 hover:bg-gray-200 transition-all"
+              >
+                취소
+              </button>
+              <button
+                onClick={saveNote}
+                className="flex-1 py-3 bg-amber-500 rounded-xl text-white hover:bg-amber-600 transition-all"
+              >
+                저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bottom Navigation */}
+      <div className="bg-white border-t border-gray-200 px-2 py-2 safe-area-bottom sticky bottom-0">
+        <div className="flex justify-around">
+          {[
+            { id: 'bible', icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253', label: '성경', color: 'amber' },
+            { id: 'ai', icon: 'M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z', label: 'AI 질문', color: 'indigo', badge: totalUnreadCount || null },
+            { id: 'notes', icon: 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z', label: '메모', color: 'yellow' },
+            { id: 'plan', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4', label: '읽기표', color: 'emerald' }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setCurrentTab(tab.id)}
+              className={`flex flex-col items-center py-2 px-4 rounded-xl transition-all relative ${
+                currentTab === tab.id
+                  ? `bg-${tab.color}-100 text-${tab.color}-600`
+                  : 'text-gray-400 hover:text-gray-600'
+              }`}
+              style={currentTab === tab.id ? {
+                backgroundColor: tab.color === 'amber' ? '#FEF3C7' :
+                                 tab.color === 'indigo' ? '#E0E7FF' :
+                                 tab.color === 'blue' ? '#DBEAFE' :
+                                 tab.color === 'yellow' ? '#FEF9C3' : '#D1FAE5',
+                color: tab.color === 'amber' ? '#D97706' :
+                       tab.color === 'indigo' ? '#4F46E5' :
+                       tab.color === 'blue' ? '#3B82F6' :
+                       tab.color === 'yellow' ? '#CA8A04' : '#059669'
+              } : {}}
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={tab.icon} />
+              </svg>
+              <span className="text-xs mt-1 font-medium">{tab.label}</span>
+              {tab.badge && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                  {tab.badge}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
