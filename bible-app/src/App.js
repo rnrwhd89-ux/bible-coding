@@ -447,31 +447,56 @@ export default function BibleApp() {
 
   // 절 선택/해제 토글 (단일 클릭)
   const handleVersePress = (verse, e) => {
-    setSelectedVerses(prev => {
-      if (prev.includes(verse)) {
-        // 이미 선택된 구절을 다시 클릭하면 선택 해제
-        const newSelection = prev.filter(v => v !== verse);
-        if (newSelection.length === 0) {
-          setShowVerseMenu(false);
+    // Shift+Click: 범위 선택
+    if (e?.shiftKey && selectedVerses.length > 0) {
+      const lastSelected = selectedVerses[selectedVerses.length - 1];
+      const start = Math.min(lastSelected, verse);
+      const end = Math.max(lastSelected, verse);
+      const rangeVerses = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+      setSelectedVerses(rangeVerses);
+      setShowVerseMenu(true);
+      return;
+    }
+
+    // Cmd/Ctrl+Click: 토글 선택
+    if (e?.metaKey || e?.ctrlKey) {
+      setSelectedVerses(prev => {
+        if (prev.includes(verse)) {
+          const newSelection = prev.filter(v => v !== verse);
+          if (newSelection.length === 0) {
+            setShowVerseMenu(false);
+          } else {
+            setShowVerseMenu(true);
+          }
+          return newSelection;
         } else {
-          // 선택이 남아있으면 메뉴 유지
           setShowVerseMenu(true);
+          return [...prev, verse].sort((a, b) => a - b);
         }
-        return newSelection;
+      });
+      return;
+    }
+
+    // 일반 클릭: 단일 선택 (기존 선택 해제)
+    setSelectedVerses(prev => {
+      if (prev.length === 1 && prev[0] === verse) {
+        // 이미 선택된 유일한 구절을 다시 클릭하면 선택 해제
+        setShowVerseMenu(false);
+        return [];
       } else {
-        // 새로운 구절 선택 - 기존 선택에 추가 (복수 선택)
+        // 새로운 구절 단일 선택
         setShowVerseMenu(true);
-        return [...prev, verse].sort((a, b) => a - b);
+        return [verse];
       }
     });
   };
 
-  // 메모 아이콘 클릭 -> 해당 절 선택하고 메뉴 표시
+  // 메모 아이콘 클릭 -> 메모 상세보기 페이지로 이동
   const handleNoteIndicatorClick = (e, verseKey) => {
     e.stopPropagation();
-    const [, , v] = verseKey.split('_');
-    setSelectedVerses([parseInt(v)]);
-    setShowVerseMenu(true);
+    setSelectedNoteKey(verseKey);
+    setShowNoteDetail(true);
+    setCurrentTab('notes');
   };
 
   // 채팅 아이콘 클릭 -> 해당 절 선택하고 메뉴 표시
@@ -1643,7 +1668,19 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
   };
 
   const NotesTab = () => {
-    const allNotes = Object.entries(notes);
+    // 빈 메모나 잘못된 형식 필터링
+    const allNotes = Object.entries(notes).filter(([key, note]) => {
+      if (!note) return false;
+      // 객체 형식의 메모만 표시
+      if (typeof note === 'object' && note.content && note.content.trim()) {
+        return true;
+      }
+      // 문자열 형식의 메모 (이전 버전 호환)
+      if (typeof note === 'string' && note.trim()) {
+        return true;
+      }
+      return false;
+    });
     const [isEditing, setIsEditing] = useState(false);
     const [editTitle, setEditTitle] = useState('');
     const [editContent, setEditContent] = useState('');
