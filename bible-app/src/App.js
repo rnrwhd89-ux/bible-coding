@@ -976,11 +976,15 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                     <div
                       key={verse}
                       onMouseDown={(e) => {
-                        e.preventDefault();
+                        // 버튼 클릭이 아닐 때만 기본 동작 방지
+                        if (e.target.tagName !== 'BUTTON') {
+                          e.preventDefault();
+                        }
                         handleDragStart(verseNum, e);
                       }}
                       onMouseUp={(e) => {
-                        if (!dragMoved) {
+                        // 버튼 클릭이 아닐 때만 구절 선택 처리
+                        if (e.target.tagName !== 'BUTTON' && !dragMoved) {
                           handleVersePress(verseNum, e);
                         }
                         handleDragEnd();
@@ -1012,7 +1016,8 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                         }
                       }}
                       onTouchEnd={(e) => {
-                        if (!dragMoved) {
+                        // 버튼 클릭이 아닐 때만 구절 선택 처리
+                        if (e.target.tagName !== 'BUTTON' && !dragMoved) {
                           handleVersePress(verseNum, e);
                         }
                         handleDragEnd();
