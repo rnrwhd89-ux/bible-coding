@@ -508,7 +508,9 @@ export default function BibleApp() {
 
   // 기존 메모 열기
   const openExistingNote = (verseKey) => {
-    setNoteText(notes[verseKey] || '');
+    const note = notes[verseKey];
+    // 새 형식(객체)과 기존 형식(문자열) 호환 처리
+    setNoteText(typeof note === 'object' ? note.content : (note || ''));
     setShowNoteModal(true);
   };
 
@@ -525,7 +527,11 @@ export default function BibleApp() {
     return selectedVerses
       .map(v => {
         const key = getVerseKey(book, chapter, v);
-        return notes[key] ? { verse: v, key, content: notes[key] } : null;
+        if (!notes[key]) return null;
+        const note = notes[key];
+        // 새 형식(객체)과 기존 형식(문자열) 호환 처리
+        const content = typeof note === 'object' ? note.content : note;
+        return { verse: v, key, content };
       })
       .filter(Boolean);
   };
@@ -1808,7 +1814,8 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                 const [b, c, v] = key.split('_');
                 // 새로운 형식과 기존 형식 호환
                 const noteData = typeof note === 'object' ? note : { title: `${b} ${c}:${v}`, content: note, verseRef: `${b} ${c}:${v}` };
-                const preview = noteData.content.substring(0, 80) + (noteData.content.length > 80 ? '...' : '');
+                const contentStr = noteData.content || '';
+                const preview = contentStr.substring(0, 80) + (contentStr.length > 80 ? '...' : '');
 
                 return (
                   <div
@@ -1841,7 +1848,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
     const totalChapters = bookList.reduce((acc, b) => acc + b.chapters, 0);
 
     return (
-      <div className="flex-1 flex flex-col bg-emerald-50/50">
+      <div className="flex-1 flex flex-col bg-emerald-50/50 min-h-0">
         {/* Plan Header */}
         <div className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-4 py-4 sticky top-0 z-10">
           <h2 className="text-lg font-semibold">읽기표</h2>
