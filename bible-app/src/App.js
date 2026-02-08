@@ -88,6 +88,85 @@ const highlightColors = [
   { name: "보라", color: "#EDE9FE", border: "#8B5CF6" }
 ];
 
+// 한글 초성 추출 유틸리티
+const CHOSUNG = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+function getChosung(str) {
+  return Array.from(str).map(ch => {
+    const code = ch.charCodeAt(0);
+    if (code >= 0xAC00 && code <= 0xD7A3) return CHOSUNG[Math.floor((code - 0xAC00) / 588)];
+    if (code >= 0x3131 && code <= 0x314E) return ch;
+    return ch;
+  }).join('');
+}
+
+// 성경책 약어 맵 (한국 교회 표준 약어)
+const bookAbbreviations = {
+  '창':'창세기','출':'출애굽기','레':'레위기','민':'민수기','신':'신명기',
+  '수':'여호수아','삿':'사사기','룻':'룻기','삼상':'사무엘상','삼하':'사무엘하',
+  '왕상':'열왕기상','왕하':'열왕기하','대상':'역대상','대하':'역대하',
+  '스':'에스라','느':'느헤미야','에':'에스더','욥':'욥기','시':'시편',
+  '잠':'잠언','전':'전도서','아':'아가','사':'이사야','렘':'예레미야',
+  '애':'예레미야애가','겔':'에스겔','단':'다니엘','호':'호세아',
+  '욜':'요엘','암':'아모스','옵':'오바댜','욘':'요나','미':'미가',
+  '나':'나훔','합':'하박국','습':'스바냐','학':'학개','슥':'스가랴','말':'말라기',
+  '마':'마태복음','막':'마가복음','눅':'누가복음','요':'요한복음',
+  '행':'사도행전','롬':'로마서','고전':'고린도전서','고후':'고린도후서',
+  '갈':'갈라디아서','엡':'에베소서','빌':'빌립보서','골':'골로새서',
+  '살전':'데살로니가전서','살후':'데살로니가후서','딤전':'디모데전서','딤후':'디모데후서',
+  '딛':'디도서','몬':'빌레몬서','히':'히브리서','약':'야고보서',
+  '벧전':'베드로전서','벧후':'베드로후서','요일':'요한일서','요이':'요한이서',
+  '요삼':'요한삼서','유':'유다서','계':'요한계시록'
+};
+
+// 검색 점수 반환: 0=미매칭, 4=약어, 3=부분문자열, 2=초성prefix, 1=혼합매칭
+function getSearchScore(bookName, query) {
+  if (!query) return 0;
+  const q = query.trim();
+  if (!q) return 0;
+  // 1. 약어 매칭 (최우선)
+  if (bookAbbreviations[q] === bookName) return 4;
+  // 2. 부분 문자열 매칭
+  if (bookName.includes(q)) return 3;
+  // 3. 초성 prefix 매칭
+  const bookChosung = getChosung(bookName);
+  const queryChosung = getChosung(q);
+  if (bookChosung.startsWith(queryChosung)) return 2;
+  // 4. 혼합 매칭 (학ㄱ → 학개)
+  const bookChars = Array.from(bookName);
+  const queryChars = Array.from(q);
+  let bi = 0, qi = 0;
+  while (bi < bookChars.length && qi < queryChars.length) {
+    const qc = queryChars[qi];
+    const bc = bookChars[bi];
+    const qCode = qc.charCodeAt(0);
+    if (qCode >= 0x3131 && qCode <= 0x314E) {
+      const bcCode = bc.charCodeAt(0);
+      if (bcCode >= 0xAC00 && bcCode <= 0xD7A3) {
+        if (CHOSUNG[Math.floor((bcCode - 0xAC00) / 588)] === qc) { qi++; bi++; continue; }
+      }
+      if (bc === qc) { qi++; bi++; continue; }
+      return 0;
+    } else {
+      if (bc === qc) { qi++; bi++; continue; }
+      return 0;
+    }
+  }
+  return qi === queryChars.length ? 1 : 0;
+}
+
+// 최고 점수 매칭 책 인덱스 찾기
+function findBestMatch(bookList, query) {
+  let bestIdx = -1, bestScore = 0;
+  for (let i = 0; i < bookList.length; i++) {
+    const score = getSearchScore(bookList[i].name, query);
+    if (score > bestScore) { bestScore = score; bestIdx = i; }
+  }
+  return bestIdx;
+}
+
+// 구약/신약 경계 인덱스 (마태복음 = index 39)
+const NT_START_INDEX = 39;
+
 export default function BibleApp() {
   const [currentTab, setCurrentTab] = useState('bible');
   const [translation, setTranslation] = useState('개역개정');
@@ -108,6 +187,41 @@ export default function BibleApp() {
   const [selectedNoteKey, setSelectedNoteKey] = useState(null);
   const [showTranslationPicker, setShowTranslationPicker] = useState(false);
   const [showBookDropdown, setShowBookDropdown] = useState(false);
+  const [pickerBook, setPickerBook] = useState('창세기');
+  const [pickerChapter, setPickerChapter] = useState(1);
+  const bookPickerRef = useRef(null);
+  const chapterPickerRef = useRef(null);
+  const pickerBookRef = useRef('창세기');
+  const pickerChapterRef = useRef(1);
+  const pickerScrollingRef = useRef(false);
+  const pickerItemHeight = 40;
+  const bookScrollSettleTimer = useRef(null);
+  // 검색바
+  const [pickerSearchText, setPickerSearchText] = useState('');
+  const searchInputRef = useRef(null);
+  // 구약/신약 셀렉터
+  const testamentPickerRef = useRef(null);
+  const [pickerTestament, setPickerTestament] = useState('구약');
+  const pickerTestamentRef = useRef('구약');
+
+  // pickerBook 상태 변경 후 스크롤 위치 복원 (리렌더로 DOM 재생성되므로)
+  useEffect(() => {
+    if (!showBookDropdown) return;
+    const bookIdx = bookList.findIndex(b => b.name === pickerBook);
+    if (bookPickerRef.current && bookIdx >= 0) {
+      pickerScrollingRef.current = true;
+      bookPickerRef.current.scrollTop = bookIdx * pickerItemHeight;
+      // 구약/신약 스크롤 위치도 복원
+      const testament = bookIdx >= NT_START_INDEX ? '신약' : '구약';
+      pickerTestamentRef.current = testament;
+      if (testamentPickerRef.current) {
+        testamentPickerRef.current.scrollTop = (testament === '신약' ? 1 : 0) * pickerItemHeight;
+      }
+      requestAnimationFrame(() => {
+        setTimeout(() => { pickerScrollingRef.current = false; }, 50);
+      });
+    }
+  }, [pickerBook, showBookDropdown]);
 
   // 드래그 선택 관련
   const [isDragging, setIsDragging] = useState(false);
@@ -246,24 +360,36 @@ export default function BibleApp() {
       return bibleCache[cacheKey];
     }
 
-    // 개역개정이면 Firestore에서 가져오기
+    // 개역개정이면 Firestore에서 가져오기 (실패 시 KRV API 폴백)
     if (translationCode === 'REVISED') {
       try {
         const verses = await getBibleVerses(bookName, chapterNum);
-        // Bolls API와 동일한 형식으로 변환
-        const data = Object.entries(verses).map(([verse, text]) => ({
-          pk: `${bookName}_${chapterNum}_${verse}`,
-          verse: parseInt(verse),
-          text: text
-        }));
-
-        // 캐시에 저장
-        setBibleCache(prev => ({ ...prev, [cacheKey]: data }));
-        return data;
+        // 데이터가 있으면 사용
+        if (Object.keys(verses).length > 0) {
+          const data = Object.entries(verses).map(([verse, text]) => ({
+            pk: `${bookName}_${chapterNum}_${verse}`,
+            verse: parseInt(verse),
+            text: text
+          }));
+          setBibleCache(prev => ({ ...prev, [cacheKey]: data }));
+          return data;
+        }
       } catch (error) {
-        console.error('Failed to fetch bible data from Firestore:', error);
-        throw error;
+        console.error('Firestore 로드 실패, KRV API로 폴백:', error);
       }
+      // Firestore 실패 또는 빈 결과 → Bolls KRV API로 폴백
+      try {
+        const fallbackUrl = `https://bolls.life/get-text/KRV/${bookNum}/${chapterNum}/`;
+        const response = await fetch(fallbackUrl);
+        if (response.ok) {
+          const data = await response.json();
+          setBibleCache(prev => ({ ...prev, [cacheKey]: data }));
+          return data;
+        }
+      } catch (fallbackError) {
+        console.error('KRV 폴백도 실패:', fallbackError);
+      }
+      throw new Error('성경 데이터를 불러올 수 없습니다.');
     }
 
     // Bolls Life API: https://bolls.life/get-text/{번역본}/{책번호}/{장}/
@@ -458,35 +584,21 @@ export default function BibleApp() {
       return;
     }
 
-    // Cmd/Ctrl+Click: 토글 선택
-    if (e?.metaKey || e?.ctrlKey) {
-      setSelectedVerses(prev => {
-        if (prev.includes(verse)) {
-          const newSelection = prev.filter(v => v !== verse);
-          if (newSelection.length === 0) {
-            setShowVerseMenu(false);
-          } else {
-            setShowVerseMenu(true);
-          }
-          return newSelection;
+    // 토글 선택: 클릭할 때마다 개별 구절 추가/제거 (Cmd 키 불필요)
+    setSelectedVerses(prev => {
+      if (prev.includes(verse)) {
+        // 이미 선택된 구절 클릭 → 선택 해제
+        const newSelection = prev.filter(v => v !== verse);
+        if (newSelection.length === 0) {
+          setShowVerseMenu(false);
         } else {
           setShowVerseMenu(true);
-          return [...prev, verse].sort((a, b) => a - b);
         }
-      });
-      return;
-    }
-
-    // 일반 클릭: 단일 선택 (기존 선택 해제)
-    setSelectedVerses(prev => {
-      if (prev.length === 1 && prev[0] === verse) {
-        // 이미 선택된 유일한 구절을 다시 클릭하면 선택 해제
-        setShowVerseMenu(false);
-        return [];
+        return newSelection;
       } else {
-        // 새로운 구절 단일 선택
+        // 새 구절 클릭 → 기존 선택에 추가
         setShowVerseMenu(true);
-        return [verse];
+        return [...prev, verse].sort((a, b) => a - b);
       }
     });
   };
@@ -830,7 +942,32 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
         <div className="flex items-center justify-between">
           <div className="relative">
             <button
-              onClick={() => setShowBookDropdown(!showBookDropdown)}
+              onClick={() => {
+                pickerBookRef.current = book;
+                pickerChapterRef.current = chapter;
+                setPickerBook(book);
+                setPickerChapter(chapter);
+                setPickerSearchText('');
+                const currentBookIdx = bookList.findIndex(b => b.name === book);
+                const initialTestament = currentBookIdx >= NT_START_INDEX ? '신약' : '구약';
+                setPickerTestament(initialTestament);
+                pickerTestamentRef.current = initialTestament;
+                setShowBookDropdown(!showBookDropdown);
+                // 열릴 때 스크롤 위치 설정
+                setTimeout(() => {
+                  const bookIdx = bookList.findIndex(b => b.name === book);
+                  if (bookPickerRef.current && bookIdx >= 0) {
+                    bookPickerRef.current.scrollTop = bookIdx * pickerItemHeight;
+                  }
+                  if (chapterPickerRef.current) {
+                    chapterPickerRef.current.scrollTop = (chapter - 1) * pickerItemHeight;
+                  }
+                  if (testamentPickerRef.current) {
+                    testamentPickerRef.current.scrollTop = (initialTestament === '신약' ? 1 : 0) * pickerItemHeight;
+                  }
+                  if (searchInputRef.current) searchInputRef.current.focus();
+                }, 50);
+              }}
               className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg transition-all"
             >
               <span className="font-semibold">{book} {chapter}장</span>
@@ -839,44 +976,250 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
               </svg>
             </button>
 
-            {/* Dropdown Menu */}
-            {showBookDropdown && (
-              <div className="absolute top-full left-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl z-50 max-h-96 overflow-y-auto">
-                <div className="p-4 space-y-4">
-                  {bookList.map(b => {
-                    const bookChapters = Array.from({ length: b.chapters }, (_, i) => i + 1);
-                    return (
-                      <div key={b.name} className="border-b border-gray-100 pb-3 last:border-0">
-                        <h4 className="font-semibold text-gray-800 mb-2 text-sm">{b.name}</h4>
-                        <div className="flex flex-wrap gap-2">
-                          {bookChapters.map(c => (
-                            <button
-                              key={c}
-                              onClick={() => {
-                                setBook(b.name);
-                                setChapter(c);
-                                setShowBookDropdown(false);
-                                setSelectedVerses([]);
-                                setShowVerseMenu(false);
-                              }}
-                              className={`w-9 h-9 rounded-lg text-xs transition-all ${
-                                book === b.name && chapter === c
-                                  ? 'bg-amber-500 text-white font-bold'
-                                  : readingPlan[getChapterKey(b.name, c)]
-                                    ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                              }`}
-                            >
-                              {c}
-                            </button>
-                          ))}
+            {/* 휠 피커 드롭다운 */}
+            {showBookDropdown && (() => {
+              const pickerBookData = bookList.find(b => b.name === pickerBook) || bookList[0];
+              const pickerChapters = Array.from({ length: pickerBookData.chapters }, (_, i) => i + 1);
+              const ITEM_H = pickerItemHeight;
+              const VISIBLE = 5;
+              const CENTER = Math.floor(VISIBLE / 2);
+              return (
+              <div className="absolute top-full left-0 mt-2 z-50 bg-white rounded-2xl shadow-2xl border border-gray-200/80 overflow-hidden" style={{ width: '340px', animation: 'pickerFadeIn 0.2s ease-out' }}>
+                  {/* 검색바 */}
+                  <div className="px-3 pt-3 pb-1">
+                    <div className="relative">
+                      <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                      <input
+                        ref={searchInputRef}
+                        type="text"
+                        placeholder="검색 (예: 눅, 창세기, ㅎ)"
+                        value={pickerSearchText}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setPickerSearchText(val);
+                          if (!val.trim()) return;
+                          const matchIdx = findBestMatch(bookList, val);
+                          if (matchIdx >= 0 && bookPickerRef.current) {
+                            pickerScrollingRef.current = true;
+                            const targetBook = bookList[matchIdx].name;
+                            pickerBookRef.current = targetBook;
+                            pickerChapterRef.current = 1;
+                            bookPickerRef.current.scrollTo({ top: matchIdx * ITEM_H, behavior: 'smooth' });
+                            if (chapterPickerRef.current) chapterPickerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+                            const newTestament = matchIdx >= NT_START_INDEX ? '신약' : '구약';
+                            pickerTestamentRef.current = newTestament;
+                            setPickerTestament(newTestament);
+                            if (testamentPickerRef.current) testamentPickerRef.current.scrollTo({ top: (newTestament === '신약' ? 1 : 0) * ITEM_H, behavior: 'smooth' });
+                            setPickerBook(targetBook);
+                            setTimeout(() => { pickerScrollingRef.current = false; }, 300);
+                          }
+                        }}
+                        className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-400 bg-gray-50"
+                      />
+                    </div>
+                  </div>
+                  {/* 피커 영역 */}
+                  <div className="flex relative" style={{ height: `${ITEM_H * VISIBLE}px` }}>
+                    {/* 중앙 하이라이트 바 */}
+                    <div className="absolute left-2 right-2 rounded-lg bg-amber-50 border border-amber-200/40 pointer-events-none" style={{ top: `${ITEM_H * CENTER}px`, height: `${ITEM_H}px` }} />
+                    {/* 상하 페이드 */}
+                    <div className="absolute left-0 right-0 top-0 pointer-events-none z-10" style={{ height: `${ITEM_H * 1.5}px`, background: 'linear-gradient(to bottom, rgba(255,255,255,0.95), rgba(255,255,255,0))' }} />
+                    <div className="absolute left-0 right-0 bottom-0 pointer-events-none z-10" style={{ height: `${ITEM_H * 1.5}px`, background: 'linear-gradient(to top, rgba(255,255,255,0.95), rgba(255,255,255,0))' }} />
+
+                    {/* 구약/신약 피커 */}
+                    <div
+                      ref={testamentPickerRef}
+                      className="w-14 overflow-y-auto relative picker-scroll"
+                      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
+                      onScroll={(e) => {
+                        const el = e.target;
+                        clearTimeout(el._scrollTimer);
+                        el._scrollTimer = setTimeout(() => {
+                          const idx = Math.round(el.scrollTop / ITEM_H);
+                          const clamped = Math.max(0, Math.min(idx, 1));
+                          el.scrollTo({ top: clamped * ITEM_H, behavior: 'smooth' });
+                          const newT = clamped === 0 ? '구약' : '신약';
+                          if (newT !== pickerTestamentRef.current) {
+                            pickerTestamentRef.current = newT;
+                            setPickerTestament(newT);
+                            const targetIdx = newT === '신약' ? NT_START_INDEX : 0;
+                            if (bookPickerRef.current) {
+                              pickerScrollingRef.current = true;
+                              pickerBookRef.current = bookList[targetIdx].name;
+                              pickerChapterRef.current = 1;
+                              bookPickerRef.current.scrollTo({ top: targetIdx * ITEM_H, behavior: 'smooth' });
+                              if (chapterPickerRef.current) chapterPickerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+                              setPickerBook(bookList[targetIdx].name);
+                              setTimeout(() => { pickerScrollingRef.current = false; }, 400);
+                            }
+                          }
+                        }, 150);
+                      }}
+                    >
+                      <div style={{ height: `${ITEM_H * CENTER}px` }} />
+                      {['구약', '신약'].map((t, i) => (
+                        <div
+                          key={t}
+                          className="flex items-center justify-center shrink-0 cursor-pointer"
+                          style={{ height: `${ITEM_H}px` }}
+                          onClick={() => {
+                            const targetIdx = t === '신약' ? NT_START_INDEX : 0;
+                            pickerTestamentRef.current = t;
+                            setPickerTestament(t);
+                            if (testamentPickerRef.current) testamentPickerRef.current.scrollTo({ top: i * ITEM_H, behavior: 'smooth' });
+                            if (bookPickerRef.current) {
+                              pickerScrollingRef.current = true;
+                              pickerBookRef.current = bookList[targetIdx].name;
+                              pickerChapterRef.current = 1;
+                              bookPickerRef.current.scrollTo({ top: targetIdx * ITEM_H, behavior: 'smooth' });
+                              if (chapterPickerRef.current) chapterPickerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+                              setPickerBook(bookList[targetIdx].name);
+                              setTimeout(() => { pickerScrollingRef.current = false; }, 400);
+                            }
+                          }}
+                        >
+                          <span className={`transition-all duration-150 ${pickerTestament === t ? 'text-gray-900 font-bold text-xs' : 'text-gray-400 text-xs'}`}>
+                            {t}
+                          </span>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      ))}
+                      <div style={{ height: `${ITEM_H * CENTER}px` }} />
+                    </div>
+
+                    {/* 구분선 */}
+                    <div className="w-px bg-gray-200 my-3" />
+
+                    {/* 책 피커 */}
+                    <div
+                      ref={bookPickerRef}
+                      className="flex-1 overflow-y-auto relative picker-scroll"
+                      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
+                      onScroll={(e) => {
+                        if (pickerScrollingRef.current) return;
+                        const el = e.target;
+                        // 스크롤 중 실시간으로 중앙 아이템 표시 업데이트 (DOM 직접 조작)
+                        const liveIdx = Math.round(el.scrollTop / ITEM_H);
+                        const liveClamped = Math.max(0, Math.min(liveIdx, bookList.length - 1));
+                        const liveName = bookList[liveClamped].name;
+                        pickerBookRef.current = liveName;
+                        el.querySelectorAll('[data-book]').forEach(node => {
+                          const span = node.querySelector('span');
+                          if (!span) return;
+                          if (node.dataset.book === liveName) {
+                            span.className = 'transition-all duration-150 text-gray-900 font-bold text-sm';
+                          } else {
+                            span.className = 'transition-all duration-150 text-gray-400 text-xs';
+                          }
+                        });
+                        // 구약/신약 자동 동기화 (실시간)
+                        const liveTestament = liveClamped >= NT_START_INDEX ? '신약' : '구약';
+                        if (liveTestament !== pickerTestamentRef.current) {
+                          pickerTestamentRef.current = liveTestament;
+                          if (testamentPickerRef.current) {
+                            testamentPickerRef.current.scrollTo({ top: (liveTestament === '신약' ? 1 : 0) * ITEM_H, behavior: 'smooth' });
+                          }
+                        }
+                        // 스크롤이 완전히 멈춘 후 스냅 + state 업데이트
+                        clearTimeout(bookScrollSettleTimer.current);
+                        bookScrollSettleTimer.current = setTimeout(() => {
+                          const idx = Math.round(el.scrollTop / ITEM_H);
+                          const clamped = Math.max(0, Math.min(idx, bookList.length - 1));
+                          const newBookName = bookList[clamped].name;
+                          pickerScrollingRef.current = true;
+                          pickerBookRef.current = newBookName;
+                          pickerChapterRef.current = 1;
+                          el.scrollTo({ top: clamped * ITEM_H, behavior: 'smooth' });
+                          if (chapterPickerRef.current) {
+                            chapterPickerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+                          }
+                          // state 업데이트 → 리렌더 → useEffect에서 스크롤 위치 복원
+                          setPickerBook(newBookName);
+                          setPickerTestament(clamped >= NT_START_INDEX ? '신약' : '구약');
+                        }, 250);
+                      }}
+                    >
+                      <div style={{ height: `${ITEM_H * CENTER}px` }} />
+                      {bookList.map((b, i) => {
+                        const isSelected = pickerBook === b.name;
+                        return (
+                        <div
+                          key={b.name}
+                          data-book={b.name}
+                          className="flex items-center justify-center shrink-0 cursor-pointer"
+                          style={{ height: `${ITEM_H}px` }}
+                          onClick={() => {
+                            pickerScrollingRef.current = true;
+                            pickerBookRef.current = b.name;
+                            pickerChapterRef.current = 1;
+                            setPickerBook(b.name);
+                            if (bookPickerRef.current) bookPickerRef.current.scrollTo({ top: i * ITEM_H, behavior: 'smooth' });
+                            if (chapterPickerRef.current) chapterPickerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+                            setTimeout(() => { pickerScrollingRef.current = false; }, 300);
+                          }}
+                        >
+                          <span className={`transition-all duration-150 ${isSelected ? 'text-gray-900 font-bold text-sm' : 'text-gray-400 text-xs'}`}>
+                            {b.name}
+                          </span>
+                        </div>
+                        );
+                      })}
+                      <div style={{ height: `${ITEM_H * CENTER}px` }} />
+                    </div>
+
+                    {/* 구분선 */}
+                    <div className="w-px bg-gray-200 my-3" />
+
+                    {/* 장 피커 */}
+                    <div
+                      ref={chapterPickerRef}
+                      className="w-16 overflow-y-auto relative picker-scroll"
+                      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
+                      onScroll={(e) => {
+                        const el = e.target;
+                        clearTimeout(el._scrollTimer);
+                        el._scrollTimer = setTimeout(() => {
+                          const idx = Math.round(el.scrollTop / ITEM_H);
+                          const clamped = Math.max(0, Math.min(idx, pickerChapters.length - 1));
+                          el.scrollTo({ top: clamped * ITEM_H, behavior: 'smooth' });
+                          pickerChapterRef.current = clamped + 1;
+                        }, 80);
+                      }}
+                    >
+                      <div style={{ height: `${ITEM_H * CENTER}px` }} />
+                      {pickerChapters.map((c) => (
+                        <div
+                          key={c}
+                          className="flex items-center justify-center shrink-0 cursor-pointer"
+                          style={{ height: `${ITEM_H}px` }}
+                          onClick={() => {
+                            pickerChapterRef.current = c;
+                            if (chapterPickerRef.current) chapterPickerRef.current.scrollTo({ top: (c - 1) * ITEM_H, behavior: 'smooth' });
+                          }}
+                        >
+                          <span className="text-gray-700 text-xs">
+                            {c}장
+                          </span>
+                        </div>
+                      ))}
+                      <div style={{ height: `${ITEM_H * CENTER}px` }} />
+                    </div>
+                  </div>
+                  {/* 확인 버튼 */}
+                  <div className="border-t border-gray-100 px-3 py-2 flex justify-end">
+                    <button onClick={() => {
+                      const confirmBook = pickerBookRef.current;
+                      const confirmBookData = bookList.find(b => b.name === confirmBook) || bookList[0];
+                      setBook(confirmBook);
+                      setChapter(Math.min(pickerChapterRef.current, confirmBookData.chapters));
+                      setShowBookDropdown(false);
+                      setPickerSearchText('');
+                      setSelectedVerses([]);
+                      setShowVerseMenu(false);
+                    }} className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold px-4 py-1.5 rounded-lg transition-colors">확인</button>
+                  </div>
               </div>
-            )}
+              );
+            })()}
           </div>
           <div className="flex items-center gap-2">
             {/* 동기화 상태 표시 */}
@@ -917,11 +1260,11 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
         </div>
       </div>
 
-      {/* 드롭다운 열려있을 때 배경 클릭으로 닫기 */}
+      {/* 피커 열려있을 때 배경 클릭으로 닫기 */}
       {showBookDropdown && (
         <div
           className="fixed inset-0 z-40"
-          onClick={() => setShowBookDropdown(false)}
+          onClick={() => { setShowBookDropdown(false); setPickerSearchText(''); }}
         />
       )}
 
