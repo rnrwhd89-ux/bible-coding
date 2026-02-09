@@ -9,7 +9,7 @@ https://bible-app-29a53.web.app
 ## 기술 스택
 - **프론트엔드**: React 18 + Tailwind CSS (CDN)
 - **백엔드**: Firebase (Auth, Firestore, Hosting)
-- **AI**: Groq API (성경 Q&A 챗봇)
+- **AI**: Gemini API (성경 Q&A 챗봇)
 - **성경 API**: Bolls Life API (KRV, NIV), Firestore (개역개정)
 
 ## 프로젝트 구조
@@ -38,7 +38,7 @@ https://bible-app-29a53.web.app
 
 ## 앱 구조 (4개 탭)
 1. **성경 탭**: 책/장 선택, 번역(개역개정/NIV/개역한글), 절 선택, 하이라이트(5색), 메모
-2. **AI 탭**: Groq API 기반 성경 Q&A 챗봇, 채팅방
+2. **AI 탭**: Gemini API 기반 성경 Q&A 챗봇, 채팅방
 3. **메모 탭**: 절별 메모 목록, 미리보기
 4. **읽기표 탭**: 66권 읽기 진도 추적, 진행률 바
 
@@ -51,7 +51,7 @@ https://bible-app-29a53.web.app
 ## 데이터 저장 전략
 - **로컬 우선**: localStorage에 저장 (오프라인 동작)
 - **클라우드 동기화**: 로그인 시 Firestore와 싱크
-- **localStorage 키**: `bible_highlights`, `bible_notes`, `bible_reading_plan`, `bible_chat_rooms`, `groq_api_key`
+- **localStorage 키**: `bible_highlights`, `bible_notes`, `bible_reading_plan`, `bible_chat_rooms`, `gemini_api_key`
 
 ## 개발 명령어
 ```bash
@@ -84,6 +84,6 @@ npm run deploy       # 자동으로 build + firebase deploy
 
 ## 주의사항
 - App.js가 2000줄+ 이므로 수정 시 정확한 위치 확인 필요
-- Groq API 키는 사용자가 직접 입력 (localStorage 저장)
+- Gemini API 키는 사용자가 직접 입력 (localStorage 저장)
 - 모바일 터치 제스처 지원 (탭, 드래그, 멀티셀렉트)
 - serviceAccountKey.json은 절대 GitHub에 올리면 안 됨 (이미 .gitignore에 포함)

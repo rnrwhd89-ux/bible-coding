@@ -856,21 +856,21 @@ ${chatRoom.versesText}
     setChatLoadingStates(prev => ({ ...prev, [chatId]: true }));
 
     try {
-      // Groq API 사용 (무료, 빠름)
-      const GROQ_API_KEY = localStorage.getItem('groq_api_key');
+      // Gemini API 사용 (무료, 빠름)
+      const GEMINI_API_KEY = localStorage.getItem('gemini_api_key');
 
-      if (!GROQ_API_KEY) {
+      if (!GEMINI_API_KEY) {
         // API 키가 없으면 안내 메시지
         setChatRooms(prev => prev.map(room =>
           room.id === chatId
             ? { ...room, messages: [...updatedMessages, {
                 role: 'assistant',
-                content: `🔑 AI 기능을 사용하려면 Groq API 키가 필요합니다.
+                content: `🔑 AI 기능을 사용하려면 Gemini API 키가 필요합니다.
 
 **무료로 API 키 받는 방법:**
-1. https://console.groq.com 접속
-2. 구글/깃허브 계정으로 로그인
-3. "API Keys" 메뉴에서 새 키 생성
+1. https://aistudio.google.com/apikey 접속
+2. 구글 계정으로 로그인
+3. "Create API Key" 버튼 클릭
 4. 아래 설정 버튼을 눌러 API 키 입력
 
 API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
@@ -881,19 +881,31 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
         return;
       }
 
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      // Gemini API 요청 형식으로 변환
+      const geminiContents = [];
+      const systemPrompt = getAISystemPrompt(chatRoom);
+
+      // 대화 히스토리를 Gemini 형식으로 변환
+      for (const m of updatedMessages) {
+        geminiContents.push({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }]
+        });
+      }
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${GROQ_API_KEY}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          max_tokens: 2000,
-          messages: [
-            { role: 'system', content: getAISystemPrompt(chatRoom) },
-            ...updatedMessages.map(m => ({ role: m.role, content: m.content }))
-          ]
+          systemInstruction: {
+            parts: [{ text: systemPrompt }]
+          },
+          contents: geminiContents,
+          generationConfig: {
+            maxOutputTokens: 2000
+          }
         })
       });
 
@@ -903,7 +915,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
         throw new Error(data.error.message || 'API 오류');
       }
 
-      const aiResponse = data.choices?.[0]?.message?.content || '죄송합니다. 응답을 가져오는 중 문제가 발생했습니다.';
+      const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || '죄송합니다. 응답을 가져오는 중 문제가 발생했습니다.';
 
       setChatRooms(prev => prev.map(room =>
         room.id === chatId
@@ -1717,11 +1729,11 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
   const AiTab = () => {
     const [localInput, setLocalInput] = useState('');
     const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-    const [apiKeyInput, setApiKeyInput] = useState(localStorage.getItem('groq_api_key') || '');
+    const [apiKeyInput, setApiKeyInput] = useState(localStorage.getItem('gemini_api_key') || '');
     const chatEndRef = useRef(null);
 
     const saveApiKey = () => {
-      localStorage.setItem('groq_api_key', apiKeyInput);
+      localStorage.setItem('gemini_api_key', apiKeyInput);
       setShowApiKeyModal(false);
     };
 
@@ -1977,17 +1989,17 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
         {showApiKeyModal && (
           <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowApiKeyModal(false)}>
             <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-xl" onClick={e => e.stopPropagation()}>
-              <h3 className="text-lg font-semibold text-gray-800 mb-2">🔑 Groq API 키 설정</h3>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">🔑 Gemini API 키 설정</h3>
               <p className="text-sm text-gray-500 mb-4">
-                무료 AI 기능을 사용하려면 Groq API 키가 필요합니다.
+                무료 AI 기능을 사용하려면 Gemini API 키가 필요합니다.
               </p>
 
               <div className="bg-indigo-50 p-3 rounded-lg mb-4">
                 <p className="text-xs text-indigo-700 font-medium mb-2">API 키 받는 방법:</p>
                 <ol className="text-xs text-indigo-600 space-y-1">
-                  <li>1. <a href="https://console.groq.com" target="_blank" rel="noopener noreferrer" className="underline">console.groq.com</a> 접속</li>
-                  <li>2. 구글/깃허브로 로그인 (무료)</li>
-                  <li>3. API Keys → Create API Key</li>
+                  <li>1. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="underline">Google AI Studio</a> 접속</li>
+                  <li>2. 구글 계정으로 로그인 (무료)</li>
+                  <li>3. Create API Key 클릭</li>
                   <li>4. 생성된 키를 아래에 붙여넣기</li>
                 </ol>
               </div>
@@ -1996,7 +2008,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                 type="password"
                 value={apiKeyInput}
                 onChange={(e) => setApiKeyInput(e.target.value)}
-                placeholder="gsk_..."
+                placeholder="AIzaSy..."
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 text-gray-800 mb-4"
               />
 
