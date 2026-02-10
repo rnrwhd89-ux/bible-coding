@@ -196,8 +196,7 @@ export default function BibleApp() {
   const pickerScrollingRef = useRef(false);
   const pickerItemHeight = 40;
   const bookScrollSettleTimer = useRef(null);
-  // 검색바
-  const [pickerSearchText, setPickerSearchText] = useState('');
+  // 검색바 (uncontrolled input - 한글 조합 깨짐 방지)
   const searchInputRef = useRef(null);
   // 구약/신약 셀렉터
   const testamentPickerRef = useRef(null);
@@ -217,7 +216,11 @@ export default function BibleApp() {
       if (testamentPickerRef.current) {
         testamentPickerRef.current.scrollTop = (testament === '신약' ? 1 : 0) * pickerItemHeight;
       }
+      // 리렌더 후 검색 input 포커스 복원 (DOM이 재생성되므로)
       requestAnimationFrame(() => {
+        if (searchInputRef.current && searchInputRef.current.value) {
+          searchInputRef.current.focus();
+        }
         setTimeout(() => { pickerScrollingRef.current = false; }, 50);
       });
     }
@@ -237,6 +240,7 @@ export default function BibleApp() {
   const [showChatList, setShowChatList] = useState(false);
   const [chatLoadingStates, setChatLoadingStates] = useState({});
   const [unreadMessages, setUnreadMessages] = useState({});
+  const [attachedVerses, setAttachedVerses] = useState([]); // AI 채팅 말씀 첨부 (탭 간 공유)
 
   // 데이터 캐시
   const [bibleCache, setBibleCache] = useState({});
@@ -478,7 +482,17 @@ export default function BibleApp() {
   }, [readingPlan]);
 
   useEffect(() => {
-    localStorage.setItem('bible_chat_rooms', JSON.stringify(chatRooms));
+    // 이미지 blob URL은 새로고침 후 무효해지므로 null로 치환하여 저장
+    const sanitizedRooms = chatRooms.map(room => ({
+      ...room,
+      messages: room.messages.map(msg => {
+        if (msg.images) {
+          return { ...msg, images: msg.images.map(img => ({ mimeType: img.mimeType, preview: null })) };
+        }
+        return msg;
+      })
+    }));
+    localStorage.setItem('bible_chat_rooms', JSON.stringify(sanitizedRooms));
   }, [chatRooms]);
 
   useEffect(() => {
@@ -532,7 +546,10 @@ export default function BibleApp() {
       e.preventDefault();
     }
     dragStartTimeRef.current = Date.now();
-    setIsDragging(true);
+    // 터치 이벤트는 즉시 드래그 모드로 전환하지 않음 (스크롤 우선)
+    if (e.type === 'mousedown') {
+      setIsDragging(true);
+    }
     setDragStartVerse(verse);
     setDragEndVerse(verse);
     setDragMoved(false);
@@ -786,6 +803,21 @@ export default function BibleApp() {
     setCurrentTab('ai');
   };
 
+  // AI 탭에서 자유 대화 시작
+  const handleNewFreeChat = () => {
+    const newChatRoom = {
+      id: Date.now().toString(),
+      title: '새 대화',
+      verseRef: '',
+      versesText: '',
+      translation: translation,
+      createdAt: new Date().toISOString(),
+      messages: []
+    };
+    setChatRooms(prev => [newChatRoom, ...prev]);
+    setCurrentChatId(newChatRoom.id);
+  };
+
   // 채팅방 삭제
   const deleteChatRoom = (chatId) => {
     setChatRooms(prev => prev.filter(room => room.id !== chatId));
@@ -835,20 +867,31 @@ export default function BibleApp() {
 
 ---
 
-현재 사용자가 선택한 말씀: ${chatRoom.verseRef} (${chatRoom.translation})
-${chatRoom.versesText}
+${chatRoom.verseRef
+  ? `현재 사용자가 선택한 말씀: ${chatRoom.verseRef} (${chatRoom.translation})\n${chatRoom.versesText}`
+  : '사용자가 특정 말씀을 선택하지 않고 자유 대화를 시작했습니다. 성경 전반에 대한 질문에 답해주세요.'}
 
 답변은 한국어로 해주시고, 따뜻하면서도 신뢰할 수 있는 톤으로 대화해주세요.
 불확실한 해석이나 논쟁이 있는 부분은 여러 관점을 균형 있게 제시해주세요.`;
   };
 
-  const sendMessage = async (message, chatId) => {
-    if (!message.trim() || chatLoadingStates[chatId]) return;
+  const sendMessage = async (message, chatId, attachments = null) => {
+    if (!message.trim() && !attachments) return;
+    if (chatLoadingStates[chatId]) return;
 
     const chatRoom = chatRooms.find(r => r.id === chatId);
     if (!chatRoom) return;
 
-    const updatedMessages = [...chatRoom.messages, { role: 'user', content: message }];
+    // 사용자 메시지 객체 생성
+    const userMessage = { role: 'user', content: message };
+    if (attachments?.images?.length > 0) {
+      userMessage.images = attachments.images.map(img => ({ mimeType: img.mimeType, preview: img.preview }));
+    }
+    if (attachments?.verses?.length > 0) {
+      userMessage.attachedVerses = attachments.verses;
+    }
+
+    const updatedMessages = [...chatRoom.messages, userMessage];
     setChatRooms(prev => prev.map(room =>
       room.id === chatId ? { ...room, messages: updatedMessages } : room
     ));
@@ -856,11 +899,9 @@ ${chatRoom.versesText}
     setChatLoadingStates(prev => ({ ...prev, [chatId]: true }));
 
     try {
-      // Gemini API 사용 (무료, 빠름)
       const GEMINI_API_KEY = localStorage.getItem('gemini_api_key');
 
       if (!GEMINI_API_KEY) {
-        // API 키가 없으면 안내 메시지
         setChatRooms(prev => prev.map(room =>
           room.id === chatId
             ? { ...room, messages: [...updatedMessages, {
@@ -885,11 +926,31 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
       const geminiContents = [];
       const systemPrompt = getAISystemPrompt(chatRoom);
 
-      // 대화 히스토리를 Gemini 형식으로 변환
-      for (const m of updatedMessages) {
+      // 대화 히스토리를 Gemini 형식으로 변환 (멀티모달 지원)
+      for (let i = 0; i < updatedMessages.length; i++) {
+        const m = updatedMessages[i];
+        const parts = [];
+
+        // 첨부된 말씀 텍스트를 content 앞에 추가
+        let textContent = m.content;
+        if (m.attachedVerses?.length > 0) {
+          const verseContext = m.attachedVerses.map(v =>
+            `[첨부된 말씀: ${v.verseRef} (${v.translation})]\n${Object.entries(v.verses).map(([num, text]) => `${num}절: ${text}`).join('\n')}`
+          ).join('\n\n');
+          textContent = verseContext + (textContent ? '\n\n' + textContent : '');
+        }
+        parts.push({ text: textContent || '(이미지)' });
+
+        // 마지막 사용자 메시지에 이미지 첨부 (base64는 attachments에서 직접 가져옴)
+        if (i === updatedMessages.length - 1 && m.role === 'user' && attachments?.images?.length > 0) {
+          for (const img of attachments.images) {
+            parts.push({ inlineData: { mimeType: img.mimeType, data: img.base64 } });
+          }
+        }
+
         geminiContents.push({
           role: m.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: m.content }]
+          parts: parts
         });
       }
 
@@ -959,7 +1020,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                 pickerChapterRef.current = chapter;
                 setPickerBook(book);
                 setPickerChapter(chapter);
-                setPickerSearchText('');
+                if (searchInputRef.current) searchInputRef.current.value = '';
                 const currentBookIdx = bookList.findIndex(b => b.name === book);
                 const initialTestament = currentBookIdx >= NT_START_INDEX ? '신약' : '구약';
                 setPickerTestament(initialTestament);
@@ -1004,29 +1065,35 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                       <input
                         ref={searchInputRef}
                         type="text"
-                        placeholder="검색 (예: 눅, 창세기, ㅎ)"
-                        value={pickerSearchText}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setPickerSearchText(val);
-                          if (!val.trim()) return;
-                          const matchIdx = findBestMatch(bookList, val);
-                          if (matchIdx >= 0 && bookPickerRef.current) {
-                            pickerScrollingRef.current = true;
-                            const targetBook = bookList[matchIdx].name;
-                            pickerBookRef.current = targetBook;
-                            pickerChapterRef.current = 1;
-                            bookPickerRef.current.scrollTo({ top: matchIdx * ITEM_H, behavior: 'smooth' });
-                            if (chapterPickerRef.current) chapterPickerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-                            const newTestament = matchIdx >= NT_START_INDEX ? '신약' : '구약';
-                            pickerTestamentRef.current = newTestament;
-                            setPickerTestament(newTestament);
-                            if (testamentPickerRef.current) testamentPickerRef.current.scrollTo({ top: (newTestament === '신약' ? 1 : 0) * ITEM_H, behavior: 'smooth' });
-                            setPickerBook(targetBook);
-                            setTimeout(() => { pickerScrollingRef.current = false; }, 300);
+                        placeholder="검색 후 Enter (예: 로마, 창세기)"
+                        defaultValue=""
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          if (e.nativeEvent.isComposing) return; // 한글 조합 중 Enter 무시
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const val = searchInputRef.current?.value;
+                            if (!val || !val.trim()) return;
+                            const matchIdx = findBestMatch(bookList, val);
+                            if (matchIdx >= 0 && bookPickerRef.current) {
+                              pickerScrollingRef.current = true;
+                              const targetBook = bookList[matchIdx].name;
+                              pickerBookRef.current = targetBook;
+                              pickerChapterRef.current = 1;
+                              bookPickerRef.current.scrollTo({ top: matchIdx * ITEM_H, behavior: 'smooth' });
+                              if (chapterPickerRef.current) chapterPickerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+                              const newTestament = matchIdx >= NT_START_INDEX ? '신약' : '구약';
+                              pickerTestamentRef.current = newTestament;
+                              setPickerTestament(newTestament);
+                              if (testamentPickerRef.current) testamentPickerRef.current.scrollTo({ top: (newTestament === '신약' ? 1 : 0) * ITEM_H, behavior: 'smooth' });
+                              setTimeout(() => { setPickerBook(targetBook); }, 50);
+                              setTimeout(() => { pickerScrollingRef.current = false; }, 350);
+                            }
                           }
                         }}
-                        className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-400 bg-gray-50"
+                        className="w-full pl-8 pr-3 py-1.5 text-xs text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-400 bg-gray-50"
                       />
                     </div>
                   </div>
@@ -1224,7 +1291,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                       setBook(confirmBook);
                       setChapter(Math.min(pickerChapterRef.current, confirmBookData.chapters));
                       setShowBookDropdown(false);
-                      setPickerSearchText('');
+                      if (searchInputRef.current) searchInputRef.current.value = '';
                       setSelectedVerses([]);
                       setShowVerseMenu(false);
                     }} className="bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold px-4 py-1.5 rounded-lg transition-colors">확인</button>
@@ -1276,7 +1343,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
       {showBookDropdown && (
         <div
           className="fixed inset-0 z-40"
-          onClick={() => { setShowBookDropdown(false); setPickerSearchText(''); }}
+          onClick={() => { setShowBookDropdown(false); if (searchInputRef.current) searchInputRef.current.value = ''; }}
         />
       )}
 
@@ -1317,7 +1384,13 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
           {!isLoading && !loadError && (
             <>
               <div
-                className="space-y-4 pb-6 select-none"
+                className="space-y-4 pb-6 select-none touch-pan-y"
+                style={{
+                  WebkitTouchCallout: 'none',
+                  WebkitUserSelect: 'none',
+                  userSelect: 'none',
+                  touchAction: 'pan-y'
+                }}
               >
                 {Object.entries(verses).map(([verse, text]) => {
                   const verseNum = parseInt(verse);
@@ -1357,28 +1430,42 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                       }}
                       onTouchStart={(e) => {
                         const touch = e.touches[0];
-                        touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+                        touchStartPosRef.current = {
+                          x: touch.clientX,
+                          y: touch.clientY,
+                          time: Date.now()
+                        };
                         handleDragStart(verseNum, e);
                       }}
                       onTouchMove={(e) => {
-                        if (isDragging) {
-                          const touch = e.touches[0];
-                          const deltaX = Math.abs(touch.clientX - touchStartPosRef.current.x);
-                          const deltaY = Math.abs(touch.clientY - touchStartPosRef.current.y);
+                        const touch = e.touches[0];
+                        const deltaX = Math.abs(touch.clientX - touchStartPosRef.current.x);
+                        const deltaY = Math.abs(touch.clientY - touchStartPosRef.current.y);
 
-                          if (deltaX > deltaY && deltaX > 10) {
-                            e.preventDefault();
-                            const element = document.elementFromPoint(touch.clientX, touch.clientY);
-                            const verseEl = element?.closest('[data-verse]');
-                            if (verseEl) {
-                              handleDragMove(parseInt(verseEl.dataset.verse));
-                            }
+                        // 가로 드래그가 세로보다 크고 10px 이상이면 범위 선택 모드
+                        if (deltaX > deltaY && deltaX > 10) {
+                          e.preventDefault(); // 스크롤 방지
+                          if (!isDragging) {
+                            setIsDragging(true); // 이제 드래그 모드 활성화
+                          }
+                          const element = document.elementFromPoint(touch.clientX, touch.clientY);
+                          const verseEl = element?.closest('[data-verse]');
+                          if (verseEl) {
+                            handleDragMove(parseInt(verseEl.dataset.verse));
                           }
                         }
+                        // 세로 스크롤은 자연스럽게 허용 (preventDefault 안 함)
                       }}
                       onTouchEnd={(e) => {
-                        // 버튼 클릭이 아닐 때만 구절 선택 처리
-                        if (e.target.tagName !== 'BUTTON' && !dragMoved) {
+                        const touch = e.changedTouches[0];
+                        const deltaX = Math.abs(touch.clientX - touchStartPosRef.current.x);
+                        const deltaY = Math.abs(touch.clientY - touchStartPosRef.current.y);
+                        const deltaTime = Date.now() - touchStartPosRef.current.time;
+
+                        // 짧은 탭 (300ms 이하, 10px 이하 이동) = 절 선택
+                        const isTap = deltaTime < 300 && deltaX < 10 && deltaY < 10;
+
+                        if (e.target.tagName !== 'BUTTON' && isTap && !dragMoved) {
                           handleVersePress(verseNum, e);
                         }
                         handleDragEnd();
@@ -1387,13 +1474,28 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                       className={`p-3 rounded-lg cursor-pointer transition-all duration-200 select-none ${
                         isSelected ? 'ring-2 ring-amber-400 bg-amber-100/50' : ''
                       }`}
-                      style={!isSelected ? highlightStyle : { ...highlightStyle, backgroundColor: '#FEF3C7' }}
+                      style={{
+                        ...(isSelected ? { ...highlightStyle, backgroundColor: '#FEF3C7' } : highlightStyle),
+                        WebkitTouchCallout: 'none',
+                        WebkitUserSelect: 'none',
+                        userSelect: 'none',
+                        touchAction: 'pan-y'
+                      }}
                     >
                       <div className="flex gap-2">
                         <span className={`font-bold text-sm min-w-[24px] ${isSelected ? 'text-amber-700' : 'text-amber-600'}`}>
                           {isSelected && '✓'}{verse}
                         </span>
-                        <p className="text-gray-800 leading-relaxed font-serif text-lg flex-1">{text}</p>
+                        <p
+                          className="text-gray-800 leading-relaxed font-serif text-lg flex-1"
+                          style={{
+                            WebkitTouchCallout: 'none',
+                            WebkitUserSelect: 'none',
+                            userSelect: 'none'
+                          }}
+                        >
+                          {text}
+                        </p>
                         {/* 메모/채팅 표시 아이콘 */}
                         <div className="flex items-start gap-1 flex-shrink-0">
                           {hasNote && (
@@ -1586,7 +1688,33 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                새 AI 질문
+                새 AI 채팅
+              </button>
+              <button
+                onClick={() => {
+                  const versesText = getSelectedVersesText();
+                  const verseRef = getSelectedVersesRef();
+                  setAttachedVerses(prev => [...prev, {
+                    id: Date.now().toString(),
+                    bookName: book,
+                    chapter: chapter,
+                    verses: Object.fromEntries(
+                      selectedVerses.sort((a, b) => a - b).map(v => [v, verses[v]])
+                    ),
+                    verseRef: verseRef,
+                    versesText: versesText,
+                    translation: translation
+                  }]);
+                  setShowVerseMenu(false);
+                  setSelectedVerses([]);
+                  setCurrentTab('ai');
+                }}
+                className="flex items-center justify-center gap-2 p-3 bg-purple-100 rounded-xl text-purple-700 hover:bg-purple-200 transition-all text-sm font-medium"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+                채팅에 첨부
               </button>
             </div>
           </div>
@@ -1732,6 +1860,12 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
     const [apiKeyInput, setApiKeyInput] = useState(localStorage.getItem('gemini_api_key') || '');
     const chatEndRef = useRef(null);
 
+    // 첨부 기능 state
+    const [attachedImages, setAttachedImages] = useState([]);
+    const [showAttachMenu, setShowAttachMenu] = useState(false);
+    const imageInputRef = useRef(null);
+    const pendingMessageRef = useRef(null);
+
     const saveApiKey = () => {
       localStorage.setItem('gemini_api_key', apiKeyInput);
       setShowApiKeyModal(false);
@@ -1741,11 +1875,75 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [currentChat?.messages]);
 
-    const handleSend = () => {
-      if (currentChatId && localInput.trim()) {
-        sendMessage(localInput.trim(), currentChatId);
+    // 채팅방 자동 생성 후 대기 중인 메시지 전송
+    useEffect(() => {
+      if (currentChatId && pendingMessageRef.current) {
+        const { text, attachments } = pendingMessageRef.current;
+        pendingMessageRef.current = null;
+        sendMessage(text || '(첨부 파일)', currentChatId, attachments);
         setLocalInput('');
+        setAttachedImages([]);
+        setAttachedVerses([]);
       }
+    }, [currentChatId]);
+
+    // 이미지 선택 핸들러
+    const handleImageSelect = (e) => {
+      const files = Array.from(e.target.files);
+      files.forEach(file => {
+        if (!file.type.startsWith('image/')) return;
+        if (attachedImages.length >= 4) return;
+        if (file.size > 4 * 1024 * 1024) {
+          alert('이미지는 4MB 이하만 첨부할 수 있습니다.');
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const base64Data = event.target.result.split(',')[1];
+          setAttachedImages(prev => [...prev, {
+            id: Date.now().toString() + Math.random().toString(36).slice(2),
+            base64: base64Data,
+            mimeType: file.type,
+            preview: URL.createObjectURL(file)
+          }]);
+        };
+        reader.readAsDataURL(file);
+      });
+      e.target.value = '';
+    };
+
+    const removeAttachedImage = (imageId) => {
+      setAttachedImages(prev => {
+        const removed = prev.find(img => img.id === imageId);
+        if (removed) URL.revokeObjectURL(removed.preview);
+        return prev.filter(img => img.id !== imageId);
+      });
+    };
+
+    const removeAttachedVerse = (verseId) => {
+      setAttachedVerses(prev => prev.filter(v => v.id !== verseId));
+    };
+
+    const handleSend = () => {
+      const hasText = localInput.trim().length > 0;
+      const hasAttachments = attachedImages.length > 0 || attachedVerses.length > 0;
+      if (!hasText && !hasAttachments) return;
+
+      if (!currentChatId) {
+        // 채팅방 없으면 자동 생성 후 전송
+        const attachments = hasAttachments ? { images: [...attachedImages], verses: [...attachedVerses] } : null;
+        pendingMessageRef.current = { text: localInput.trim(), attachments };
+        handleNewFreeChat();
+        return;
+      }
+
+      const messageText = localInput.trim() || '(첨부 파일)';
+      const attachments = hasAttachments ? { images: [...attachedImages], verses: [...attachedVerses] } : null;
+      sendMessage(messageText, currentChatId, attachments);
+      setLocalInput('');
+      setAttachedImages([]);
+      setAttachedVerses([]);
+      setShowAttachMenu(false);
     };
 
     const handleKeyDown = (e) => {
@@ -1776,6 +1974,15 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                onClick={handleNewFreeChat}
+                className="bg-white/10 hover:bg-white/20 p-2 rounded-lg transition-all"
+                title="새 대화"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
               <button
                 onClick={() => setShowApiKeyModal(true)}
                 className="bg-white/10 hover:bg-white/20 p-2 rounded-lg transition-all"
@@ -1809,19 +2016,24 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
             <div className="text-center py-12">
               <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <svg className="w-10 h-10 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <h3 className="text-lg font-semibold text-gray-800 mb-2">성경 말씀에 대해 물어보세요</h3>
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">성경 AI 도우미</h3>
               <p className="text-gray-500 text-sm mb-4">
-                성경 탭에서 말씀을 선택하고<br/>
-                "AI에게 질문" 버튼을 누르면<br/>
-                새로운 채팅이 시작됩니다.
+                성경에 대해 자유롭게 질문하거나,<br/>
+                말씀을 첨부하여 깊이 있는 대화를 나눠보세요.
               </p>
+              <button
+                onClick={handleNewFreeChat}
+                className="px-6 py-3 bg-indigo-500 text-white rounded-xl text-sm font-medium hover:bg-indigo-600 transition-all shadow-md mb-3"
+              >
+                새 대화 시작하기
+              </button>
               {chatRooms.length > 0 && (
                 <button
                   onClick={() => setShowChatList(true)}
-                  className="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg text-sm font-medium hover:bg-indigo-200 transition-all"
+                  className="block mx-auto px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg text-sm font-medium hover:bg-indigo-200 transition-all"
                 >
                   이전 채팅 보기 ({chatRooms.length}개)
                 </button>
@@ -1829,28 +2041,31 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
             </div>
           ) : (
             <>
-              {/* 선택한 말씀 표시 */}
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
-                <div className="flex items-center gap-2 text-amber-700 mb-1">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                  </svg>
-                  <span className="font-medium text-sm">{currentChat.verseRef}</span>
-                  <span className="text-xs text-amber-600">({currentChat.translation})</span>
+              {/* 선택한 말씀 표시 (말씀 기반 채팅일 때만) */}
+              {currentChat.verseRef && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                  <div className="flex items-center gap-2 text-amber-700 mb-1">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                    </svg>
+                    <span className="font-medium text-sm">{currentChat.verseRef}</span>
+                    <span className="text-xs text-amber-600">({currentChat.translation})</span>
+                  </div>
+                  <p className="text-amber-900 text-sm whitespace-pre-wrap">{currentChat.versesText}</p>
                 </div>
-                <p className="text-amber-900 text-sm whitespace-pre-wrap">{currentChat.versesText}</p>
-              </div>
+              )}
 
               {/* 메시지가 없을 때 질문 예시 */}
               {currentChat.messages.length === 0 && (
                 <div className="text-center py-4">
-                  <p className="text-gray-500 text-sm mb-3">이 말씀에 대해 질문해보세요</p>
+                  <p className="text-gray-500 text-sm mb-3">
+                    {currentChat.verseRef ? '이 말씀에 대해 질문해보세요' : '성경에 대해 자유롭게 질문해보세요'}
+                  </p>
                   <div className="space-y-2">
-                    {[
-                      "이 구절의 의미가 뭔가요?",
-                      "역사적 배경이 궁금해요",
-                      "다른 번역본과 비교해주세요"
-                    ].map((q, i) => (
+                    {(currentChat.verseRef
+                      ? ["이 구절의 의미가 뭔가요?", "역사적 배경이 궁금해요", "다른 번역본과 비교해주세요"]
+                      : ["성경에서 사랑에 대해 알려주세요", "기도하는 방법을 알려주세요", "시편 23편을 설명해주세요"]
+                    ).map((q, i) => (
                       <button
                         key={i}
                         onClick={() => {
@@ -1875,6 +2090,37 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                       ? 'bg-indigo-500 text-white rounded-br-md'
                       : 'bg-white shadow-md text-gray-800 rounded-bl-md'
                   }`}>
+                    {/* 첨부된 말씀 */}
+                    {msg.attachedVerses?.length > 0 && (
+                      <div className="mb-2 space-y-1">
+                        {msg.attachedVerses.map((v, vi) => (
+                          <div key={vi} className={`p-2 rounded-lg text-xs ${
+                            msg.role === 'user' ? 'bg-white/15' : 'bg-amber-50 border border-amber-200'
+                          }`}>
+                            <span className="font-medium">{v.verseRef}</span>
+                            <p className="mt-1 opacity-80 line-clamp-2">
+                              {Object.entries(v.verses).sort(([a],[b]) => parseInt(a) - parseInt(b)).map(([n, t]) => `${n}절: ${t}`).join(' ')}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {/* 첨부된 이미지 */}
+                    {msg.images?.length > 0 && (
+                      <div className="mb-2 flex flex-wrap gap-1">
+                        {msg.images.map((img, ii) => (
+                          img.preview ? (
+                            <img key={ii} src={img.preview} alt="" className="w-20 h-20 object-cover rounded-lg" />
+                          ) : (
+                            <div key={ii} className="w-20 h-20 bg-gray-200 rounded-lg flex items-center justify-center">
+                              <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                            </div>
+                          )
+                        ))}
+                      </div>
+                    )}
                     <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
                   </div>
                 </div>
@@ -1898,8 +2144,61 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
 
         {/* Chat Input */}
         {currentChat && (
-          <div className="p-4 border-t border-gray-200 bg-white">
-            <div className="flex gap-2">
+          <div className="border-t border-gray-200 bg-white">
+            {/* 첨부 스테이징 영역 */}
+            {(attachedImages.length > 0 || attachedVerses.length > 0) && (
+              <div className="px-4 pt-3 pb-1 flex flex-wrap gap-2">
+                {attachedImages.map(img => (
+                  <div key={img.id} className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200">
+                    <img src={img.preview} alt="" className="w-full h-full object-cover" />
+                    <button onClick={() => removeAttachedImage(img.id)}
+                      className="absolute top-0 right-0 w-5 h-5 bg-black/50 text-white rounded-bl-lg flex items-center justify-center">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                ))}
+                {attachedVerses.map(v => (
+                  <div key={v.id} className="relative px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg max-w-[200px]">
+                    <p className="text-xs font-medium text-amber-700 truncate pr-4">{v.verseRef}</p>
+                    <p className="text-xs text-amber-600 truncate">{v.translation}</p>
+                    <button onClick={() => removeAttachedVerse(v.id)}
+                      className="absolute top-0.5 right-0.5 w-4 h-4 text-amber-500 hover:text-amber-700">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* 입력 행 */}
+            <div className="p-4 flex gap-2 items-end">
+              {/* + 버튼 */}
+              <div className="relative">
+                <button onClick={() => setShowAttachMenu(!showAttachMenu)}
+                  className="w-10 h-10 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-xl transition-all flex-shrink-0">
+                  <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+                {showAttachMenu && (
+                  <div className="absolute bottom-12 left-0 bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden z-20 w-40">
+                    <button onClick={() => { imageInputRef.current?.click(); setShowAttachMenu(false); }}
+                      className="w-full flex items-center gap-2 px-4 py-3 hover:bg-gray-50 text-sm text-gray-700">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      이미지 추가
+                    </button>
+                    <button onClick={() => { setCurrentTab('bible'); setShowAttachMenu(false); }}
+                      className="w-full flex items-center gap-2 px-4 py-3 hover:bg-gray-50 text-sm text-gray-700 border-t border-gray-100">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                      </svg>
+                      말씀 추가
+                    </button>
+                  </div>
+                )}
+              </div>
+              <input ref={imageInputRef} type="file" accept="image/*" multiple onChange={handleImageSelect} className="hidden" />
               <input
                 type="text"
                 value={localInput}
@@ -1910,9 +2209,9 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
               />
               <button
                 onClick={handleSend}
-                disabled={chatLoadingStates[currentChatId] || !localInput.trim()}
-                className={`px-4 py-3 rounded-xl transition-all ${
-                  chatLoadingStates[currentChatId] || !localInput.trim()
+                disabled={chatLoadingStates[currentChatId] || (!localInput.trim() && attachedImages.length === 0 && attachedVerses.length === 0)}
+                className={`px-4 py-3 rounded-xl transition-all flex-shrink-0 ${
+                  chatLoadingStates[currentChatId] || (!localInput.trim() && attachedImages.length === 0 && attachedVerses.length === 0)
                     ? 'bg-gray-200 text-gray-400'
                     : 'bg-indigo-500 text-white hover:bg-indigo-600'
                 }`}
@@ -2334,7 +2633,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
         <div className="flex justify-around">
           {[
             { id: 'bible', icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253', label: '성경', color: 'amber' },
-            { id: 'ai', icon: 'M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z', label: 'AI 질문', color: 'indigo', badge: totalUnreadCount || null },
+            { id: 'ai', icon: 'M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z', label: 'AI 채팅', color: 'indigo', badge: totalUnreadCount || null },
             { id: 'notes', icon: 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z', label: '메모', color: 'yellow' },
             { id: 'plan', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4', label: '읽기표', color: 'emerald' }
           ].map(tab => (
