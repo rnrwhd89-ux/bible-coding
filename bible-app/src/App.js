@@ -1109,7 +1109,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                     <div
                       ref={testamentPickerRef}
                       className="w-14 overflow-y-auto relative picker-scroll"
-                      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
+                      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', overscrollBehavior: 'none' }}
                       onScroll={(e) => {
                         const el = e.target;
                         clearTimeout(el._scrollTimer);
@@ -1172,7 +1172,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                     <div
                       ref={bookPickerRef}
                       className="flex-1 overflow-y-auto relative picker-scroll"
-                      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
+                      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', overscrollBehavior: 'none' }}
                       onScroll={(e) => {
                         if (pickerScrollingRef.current) return;
                         const el = e.target;
@@ -1252,7 +1252,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                     <div
                       ref={chapterPickerRef}
                       className="w-16 overflow-y-auto relative picker-scroll"
-                      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
+                      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', overscrollBehavior: 'none' }}
                       onScroll={(e) => {
                         const el = e.target;
                         clearTimeout(el._scrollTimer);
@@ -1348,7 +1348,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
       )}
 
       {/* Bible Content */}
-      <div className="flex-1 overflow-y-auto bg-gradient-to-b from-amber-50/50 to-white" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div className="flex-1 overflow-y-auto bg-gradient-to-b from-amber-50/50 to-white" style={{ overscrollBehavior: 'none' }}>
         <div className="p-4 max-w-2xl mx-auto">
           <h2 className="text-center text-xl font-serif text-amber-900 mb-6 pb-3 border-b border-amber-200">
             {book} {chapter}장
@@ -2011,7 +2011,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
         </div>
 
         {/* Chat Content */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ overscrollBehavior: 'none' }}>
           {!currentChat ? (
             <div className="text-center py-12">
               <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -2401,7 +2401,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto p-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <div className="flex-1 overflow-y-auto p-4" style={{ overscrollBehavior: 'none' }}>
             <div className="bg-white rounded-xl p-4 shadow-sm mb-4">
               <span
                 onClick={() => {
@@ -2452,7 +2452,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
           <h2 className="text-lg font-semibold">내 메모</h2>
           <p className="text-sm text-white/80">{allNotes.length}개의 메모</p>
         </div>
-        <div className="flex-1 overflow-y-auto p-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="flex-1 overflow-y-auto p-4" style={{ overscrollBehavior: 'none' }}>
           {allNotes.length === 0 ? (
             <div className="text-center py-12">
               <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -2514,7 +2514,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
             />
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="flex-1 overflow-y-auto p-4" style={{ overscrollBehavior: 'none' }}>
           <div className="space-y-4 pb-20">
             {bookList.map(b => {
               const bookChapters = Array.from({ length: b.chapters }, (_, i) => i + 1);
@@ -2561,7 +2561,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
   };
 
   return (
-    <div className="h-screen flex flex-col bg-white font-sans overflow-hidden">
+    <div className="app-height flex flex-col bg-white font-sans overflow-hidden">
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
 
