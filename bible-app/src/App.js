@@ -242,6 +242,21 @@ export default function BibleApp() {
   const [unreadMessages, setUnreadMessages] = useState({});
   const [attachedVerses, setAttachedVerses] = useState([]); // AI 채팅 말씀 첨부 (탭 간 공유)
 
+  // AI 탭 관련 state (App 레벨로 이동 - 탭 전환 시 DOM 재생성 방지)
+  const [localInput, setLocalInput] = useState('');
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState(localStorage.getItem('gemini_api_key') || '');
+  const chatEndRef = useRef(null);
+  const [attachedImages, setAttachedImages] = useState([]);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const imageInputRef = useRef(null);
+  const pendingMessageRef = useRef(null);
+
+  // 메모 탭 관련 state (App 레벨로 이동)
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
+
   // 데이터 캐시
   const [bibleCache, setBibleCache] = useState({});
 
@@ -1006,6 +1021,23 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
     setShowVerseMenu(false);
     setSelectedVerses([]);
   };
+
+  // AI 채팅 자동 스크롤 (AiTab에서 App 레벨로 이동)
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [currentChat?.messages]);
+
+  // 채팅방 자동 생성 후 대기 중인 메시지 전송 (AiTab에서 App 레벨로 이동)
+  useEffect(() => {
+    if (currentChatId && pendingMessageRef.current) {
+      const { text, attachments } = pendingMessageRef.current;
+      pendingMessageRef.current = null;
+      sendMessage(text || '(첨부 파일)', currentChatId, attachments);
+      setLocalInput('');
+      setAttachedImages([]);
+      setAttachedVerses([]);
+    }
+  }, [currentChatId]);
 
   // Tab Components
   const BibleTab = () => (
@@ -1855,37 +1887,10 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
   );
 
   const AiTab = () => {
-    const [localInput, setLocalInput] = useState('');
-    const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-    const [apiKeyInput, setApiKeyInput] = useState(localStorage.getItem('gemini_api_key') || '');
-    const chatEndRef = useRef(null);
-
-    // 첨부 기능 state
-    const [attachedImages, setAttachedImages] = useState([]);
-    const [showAttachMenu, setShowAttachMenu] = useState(false);
-    const imageInputRef = useRef(null);
-    const pendingMessageRef = useRef(null);
-
     const saveApiKey = () => {
       localStorage.setItem('gemini_api_key', apiKeyInput);
       setShowApiKeyModal(false);
     };
-
-    useEffect(() => {
-      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [currentChat?.messages]);
-
-    // 채팅방 자동 생성 후 대기 중인 메시지 전송
-    useEffect(() => {
-      if (currentChatId && pendingMessageRef.current) {
-        const { text, attachments } = pendingMessageRef.current;
-        pendingMessageRef.current = null;
-        sendMessage(text || '(첨부 파일)', currentChatId, attachments);
-        setLocalInput('');
-        setAttachedImages([]);
-        setAttachedVerses([]);
-      }
-    }, [currentChatId]);
 
     // 이미지 선택 핸들러
     const handleImageSelect = (e) => {
@@ -2346,9 +2351,6 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
       }
       return false;
     });
-    const [isEditing, setIsEditing] = useState(false);
-    const [editTitle, setEditTitle] = useState('');
-    const [editContent, setEditContent] = useState('');
 
     // 메모 상세 보기
     if (showNoteDetail && selectedNoteKey) {
@@ -2584,10 +2586,10 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
       `}</style>
 
       {/* Main Content */}
-      {currentTab === 'bible' && <BibleTab />}
-      {currentTab === 'ai' && <AiTab />}
-      {currentTab === 'notes' && <NotesTab />}
-      {currentTab === 'plan' && <PlanTab />}
+      {currentTab === 'bible' && BibleTab()}
+      {currentTab === 'ai' && AiTab()}
+      {currentTab === 'notes' && NotesTab()}
+      {currentTab === 'plan' && PlanTab()}
 
       {/* Note Modal - 최상위 레벨에서 렌더링 (재생성 방지) */}
       {showNoteModal && (
