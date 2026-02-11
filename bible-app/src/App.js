@@ -242,6 +242,21 @@ export default function BibleApp() {
   const [unreadMessages, setUnreadMessages] = useState({});
   const [attachedVerses, setAttachedVerses] = useState([]); // AI 채팅 말씀 첨부 (탭 간 공유)
 
+  // AI 탭 관련 state (App 레벨로 이동 - 탭 전환 시 DOM 재생성 방지)
+  const [localInput, setLocalInput] = useState('');
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState(localStorage.getItem('gemini_api_key') || '');
+  const chatEndRef = useRef(null);
+  const [attachedImages, setAttachedImages] = useState([]);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const imageInputRef = useRef(null);
+  const pendingMessageRef = useRef(null);
+
+  // 메모 탭 관련 state (App 레벨로 이동)
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
+
   // 데이터 캐시
   const [bibleCache, setBibleCache] = useState({});
 
@@ -1007,6 +1022,23 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
     setSelectedVerses([]);
   };
 
+  // AI 채팅 자동 스크롤 (AiTab에서 App 레벨로 이동)
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [currentChat?.messages]);
+
+  // 채팅방 자동 생성 후 대기 중인 메시지 전송 (AiTab에서 App 레벨로 이동)
+  useEffect(() => {
+    if (currentChatId && pendingMessageRef.current) {
+      const { text, attachments } = pendingMessageRef.current;
+      pendingMessageRef.current = null;
+      sendMessage(text || '(첨부 파일)', currentChatId, attachments);
+      setLocalInput('');
+      setAttachedImages([]);
+      setAttachedVerses([]);
+    }
+  }, [currentChatId]);
+
   // Tab Components
   const BibleTab = () => (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -1109,7 +1141,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                     <div
                       ref={testamentPickerRef}
                       className="w-14 overflow-y-auto relative picker-scroll"
-                      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
+                      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', overscrollBehavior: 'none' }}
                       onScroll={(e) => {
                         const el = e.target;
                         clearTimeout(el._scrollTimer);
@@ -1172,7 +1204,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                     <div
                       ref={bookPickerRef}
                       className="flex-1 overflow-y-auto relative picker-scroll"
-                      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
+                      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', overscrollBehavior: 'none' }}
                       onScroll={(e) => {
                         if (pickerScrollingRef.current) return;
                         const el = e.target;
@@ -1252,7 +1284,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                     <div
                       ref={chapterPickerRef}
                       className="w-16 overflow-y-auto relative picker-scroll"
-                      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
+                      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', overscrollBehavior: 'none' }}
                       onScroll={(e) => {
                         const el = e.target;
                         clearTimeout(el._scrollTimer);
@@ -1348,7 +1380,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
       )}
 
       {/* Bible Content */}
-      <div className="flex-1 overflow-y-auto bg-gradient-to-b from-amber-50/50 to-white" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div className="flex-1 overflow-y-auto bg-gradient-to-b from-amber-50/50 to-white" style={{ overscrollBehavior: 'none' }}>
         <div className="p-4 max-w-2xl mx-auto">
           <h2 className="text-center text-xl font-serif text-amber-900 mb-6 pb-3 border-b border-amber-200">
             {book} {chapter}장
@@ -1855,37 +1887,10 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
   );
 
   const AiTab = () => {
-    const [localInput, setLocalInput] = useState('');
-    const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-    const [apiKeyInput, setApiKeyInput] = useState(localStorage.getItem('gemini_api_key') || '');
-    const chatEndRef = useRef(null);
-
-    // 첨부 기능 state
-    const [attachedImages, setAttachedImages] = useState([]);
-    const [showAttachMenu, setShowAttachMenu] = useState(false);
-    const imageInputRef = useRef(null);
-    const pendingMessageRef = useRef(null);
-
     const saveApiKey = () => {
       localStorage.setItem('gemini_api_key', apiKeyInput);
       setShowApiKeyModal(false);
     };
-
-    useEffect(() => {
-      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [currentChat?.messages]);
-
-    // 채팅방 자동 생성 후 대기 중인 메시지 전송
-    useEffect(() => {
-      if (currentChatId && pendingMessageRef.current) {
-        const { text, attachments } = pendingMessageRef.current;
-        pendingMessageRef.current = null;
-        sendMessage(text || '(첨부 파일)', currentChatId, attachments);
-        setLocalInput('');
-        setAttachedImages([]);
-        setAttachedVerses([]);
-      }
-    }, [currentChatId]);
 
     // 이미지 선택 핸들러
     const handleImageSelect = (e) => {
@@ -2011,7 +2016,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
         </div>
 
         {/* Chat Content */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ overscrollBehavior: 'none' }}>
           {!currentChat ? (
             <div className="text-center py-12">
               <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -2346,9 +2351,6 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
       }
       return false;
     });
-    const [isEditing, setIsEditing] = useState(false);
-    const [editTitle, setEditTitle] = useState('');
-    const [editContent, setEditContent] = useState('');
 
     // 메모 상세 보기
     if (showNoteDetail && selectedNoteKey) {
@@ -2401,7 +2403,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto p-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <div className="flex-1 overflow-y-auto p-4" style={{ overscrollBehavior: 'none' }}>
             <div className="bg-white rounded-xl p-4 shadow-sm mb-4">
               <span
                 onClick={() => {
@@ -2452,7 +2454,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
           <h2 className="text-lg font-semibold">내 메모</h2>
           <p className="text-sm text-white/80">{allNotes.length}개의 메모</p>
         </div>
-        <div className="flex-1 overflow-y-auto p-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="flex-1 overflow-y-auto p-4" style={{ overscrollBehavior: 'none' }}>
           {allNotes.length === 0 ? (
             <div className="text-center py-12">
               <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -2514,7 +2516,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
             />
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="flex-1 overflow-y-auto p-4" style={{ overscrollBehavior: 'none' }}>
           <div className="space-y-4 pb-20">
             {bookList.map(b => {
               const bookChapters = Array.from({ length: b.chapters }, (_, i) => i + 1);
@@ -2561,7 +2563,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
   };
 
   return (
-    <div className="h-screen flex flex-col bg-white font-sans overflow-hidden">
+    <div className="app-height flex flex-col bg-white font-sans overflow-hidden">
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
 
@@ -2584,10 +2586,10 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
       `}</style>
 
       {/* Main Content */}
-      {currentTab === 'bible' && <BibleTab />}
-      {currentTab === 'ai' && <AiTab />}
-      {currentTab === 'notes' && <NotesTab />}
-      {currentTab === 'plan' && <PlanTab />}
+      {currentTab === 'bible' && BibleTab()}
+      {currentTab === 'ai' && AiTab()}
+      {currentTab === 'notes' && NotesTab()}
+      {currentTab === 'plan' && PlanTab()}
 
       {/* Note Modal - 최상위 레벨에서 렌더링 (재생성 방지) */}
       {showNoteModal && (
