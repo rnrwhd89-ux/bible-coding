@@ -1,0 +1,27 @@
+{
+  "short_name": "성경",
+  "name": "성경 앱 - 읽기, 메모, AI 질문",
+  "description": "성경 읽기, 하이라이트, 메모, AI 질문 기능을 갖춘 성경 앱",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#92400E",
+  "background_color": "#FEF3C7",
+  "orientation": "portrait",
+  "scope": "/",
+  "lang": "ko",
+  "categories": ["books", "education", "lifestyle"]
+}

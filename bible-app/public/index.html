@@ -2,18 +2,61 @@
 <html lang="ko">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#92400E" />
     <meta name="description" content="성경 읽기 앱 - 하이라이트, 메모, AI 질문 기능" />
+    <!-- PWA 메타 태그 -->
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="성경" />
     <title>성경 앱</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+      /* 피커 애니메이션 */
       @keyframes pickerFadeIn {
         from { opacity: 0; transform: translateY(-8px); }
         to { opacity: 1; transform: translateY(0); }
       }
-      /* 피커 스크롤바 숨김 */
+      /* GPU 가속 슬라이드 업 */
+      @keyframes slideUp {
+        from { transform: translate3d(0, 100%, 0); opacity: 0; }
+        to { transform: translate3d(0, 0, 0); opacity: 1; }
+      }
+      .animate-slide-up {
+        animation: slideUp 0.2s ease-out;
+        will-change: transform;
+      }
+      /* 피커 스크롤바 숨김 + Snap */
+      .picker-scroll {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+        scroll-snap-type: y mandatory;
+        scroll-padding: 50% 0;
+      }
       .picker-scroll::-webkit-scrollbar { display: none; }
+      .picker-scroll > div { scroll-snap-align: center; }
+      /* 기본 레이아웃 - iOS Safari 대응 */
+      html {
+        height: 100%;
+        overflow: hidden;
+      }
+      body {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        overscroll-behavior-y: contain;
+        -webkit-overflow-scrolling: touch;
+      }
+      /* 스크롤 컨테이너 공통 스타일 */
+      .scroll-container {
+        position: relative;
+        overscroll-behavior-y: contain;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-y;
+      }
     </style>
   </head>
   <body>

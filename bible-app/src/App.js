@@ -237,7 +237,6 @@ export default function BibleApp() {
   // 채팅방 관리
   const [chatRooms, setChatRooms] = useState([]);
   const [currentChatId, setCurrentChatId] = useState(null);
-  const [showChatList, setShowChatList] = useState(false);
   const [chatLoadingStates, setChatLoadingStates] = useState({});
   const [unreadMessages, setUnreadMessages] = useState({});
   const [attachedVerses, setAttachedVerses] = useState([]); // AI 채팅 말씀 첨부 (탭 간 공유)
@@ -262,8 +261,6 @@ export default function BibleApp() {
 
     setIsSyncing(true);
     try {
-      // Firebase가 활성화되면 이 부분의 주석을 해제하세요
-      /*
       await saveUserData(user.uid, {
         highlights,
         notes,
@@ -271,7 +268,6 @@ export default function BibleApp() {
         chatRooms,
         unreadMessages
       });
-      */
       setLastSyncTime(new Date().toISOString());
     } catch (error) {
       console.error('동기화 오류:', error);
@@ -285,8 +281,6 @@ export default function BibleApp() {
     if (!firebaseEnabled || !user) return;
 
     try {
-      // Firebase가 활성화되면 이 부분의 주석을 해제하세요
-      /*
       const data = await loadUserData(user.uid);
       if (data) {
         if (data.highlights) setHighlights(data.highlights);
@@ -295,7 +289,6 @@ export default function BibleApp() {
         if (data.chatRooms) setChatRooms(data.chatRooms);
         if (data.unreadMessages) setUnreadMessages(data.unreadMessages);
       }
-      */
     } catch (error) {
       console.error('데이터 불러오기 오류:', error);
     }
@@ -498,6 +491,13 @@ export default function BibleApp() {
   useEffect(() => {
     localStorage.setItem('bible_unread_messages', JSON.stringify(unreadMessages));
   }, [unreadMessages]);
+
+  // AI 탭 이탈 시 채팅 목록으로 복귀
+  useEffect(() => {
+    if (currentTab !== 'ai') {
+      setCurrentChatId(null);
+    }
+  }, [currentTab]);
 
   // 현재 채팅방 열람 시 읽음 처리
   useEffect(() => {
@@ -1009,9 +1009,9 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
 
   // Tab Components
   const BibleTab = () => (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-hidden" style={{ minHeight: 0, height: '100%' }}>
       {/* Navigation Header */}
-      <div className="bg-gradient-to-r from-amber-800 to-amber-900 text-white px-4 py-3">
+      <div className="bg-gradient-to-r from-amber-800 to-amber-900 text-white px-4 py-3 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="relative">
             <button
@@ -1348,7 +1348,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
       )}
 
       {/* Bible Content */}
-      <div className="flex-1 overflow-y-auto bg-gradient-to-b from-amber-50/50 to-white" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div className="flex-1 overflow-y-auto scroll-container bg-gradient-to-b from-amber-50/50 to-white" style={{ minHeight: 0, WebkitOverflowScrolling: 'touch', touchAction: 'pan-y', overscrollBehaviorY: 'contain' }}>
         <div className="p-4 max-w-2xl mx-auto">
           <h2 className="text-center text-xl font-serif text-amber-900 mb-6 pb-3 border-b border-amber-200">
             {book} {chapter}장
@@ -1961,6 +1961,17 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
         <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-3 sticky top-0 z-10">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
+              {/* 채팅방 열람 중일 때만 뒤로 가기 버튼 표시 */}
+              {currentChat && (
+                <button
+                  onClick={() => setCurrentChatId(null)}
+                  className="bg-white/10 hover:bg-white/20 p-1.5 rounded-lg transition-all"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+              )}
               <div className="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1969,20 +1980,22 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
               <div>
                 <h2 className="font-semibold text-sm">성경 AI 도우미</h2>
                 <p className="text-xs text-white/80">
-                  {currentChat ? currentChat.title : '채팅을 선택하세요'}
+                  {currentChat ? currentChat.title : `채팅 ${chatRooms.length}개`}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                onClick={handleNewFreeChat}
-                className="bg-white/10 hover:bg-white/20 p-2 rounded-lg transition-all"
-                title="새 대화"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-              </button>
+              {!currentChat && (
+                <button
+                  onClick={handleNewFreeChat}
+                  className="bg-white/10 hover:bg-white/20 p-2 rounded-lg transition-all"
+                  title="새 대화"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+              )}
               <button
                 onClick={() => setShowApiKeyModal(true)}
                 className="bg-white/10 hover:bg-white/20 p-2 rounded-lg transition-all"
@@ -1993,53 +2006,92 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               </button>
-              <button
-                onClick={() => setShowChatList(true)}
-                className="bg-white/10 hover:bg-white/20 p-2 rounded-lg transition-all relative"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-                {totalUnreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-amber-400 text-indigo-900 text-xs font-bold rounded-full flex items-center justify-center">
-                    {totalUnreadCount}
-                  </span>
-                )}
-              </button>
             </div>
           </div>
         </div>
 
         {/* Chat Content */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="flex-1 overflow-y-auto scroll-container p-4 space-y-4" style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y', overscrollBehaviorY: 'contain' }}>
           {!currentChat ? (
-            <div className="text-center py-12">
-              <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg className="w-10 h-10 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <h3 className="text-lg font-semibold text-gray-800 mb-2">성경 AI 도우미</h3>
-              <p className="text-gray-500 text-sm mb-4">
-                성경에 대해 자유롭게 질문하거나,<br/>
-                말씀을 첨부하여 깊이 있는 대화를 나눠보세요.
-              </p>
-              <button
-                onClick={handleNewFreeChat}
-                className="px-6 py-3 bg-indigo-500 text-white rounded-xl text-sm font-medium hover:bg-indigo-600 transition-all shadow-md mb-3"
-              >
-                새 대화 시작하기
-              </button>
-              {chatRooms.length > 0 && (
-                <button
-                  onClick={() => setShowChatList(true)}
-                  className="block mx-auto px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg text-sm font-medium hover:bg-indigo-200 transition-all"
-                >
-                  이전 채팅 보기 ({chatRooms.length}개)
-                </button>
+            /* 채팅 목록 화면 */
+            <div className="space-y-3">
+              {chatRooms.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-10 h-10 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-2">채팅이 없습니다</h3>
+                  <p className="text-gray-500 text-sm mb-4">
+                    성경에 대해 자유롭게 질문하거나,<br/>
+                    말씀을 첨부하여 대화를 시작해보세요.
+                  </p>
+                  <button
+                    onClick={handleNewFreeChat}
+                    className="px-6 py-3 bg-indigo-500 text-white rounded-xl text-sm font-medium hover:bg-indigo-600 transition-all shadow-md"
+                  >
+                    <div className="flex items-center gap-2">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      새 대화 시작하기
+                    </div>
+                  </button>
+                </div>
+              ) : (
+                chatRooms.map(room => {
+                  const lastMsg = room.messages[room.messages.length - 1];
+                  const lastMsgPreview = lastMsg
+                    ? (lastMsg.role === 'user' ? '나: ' : 'AI: ') + (lastMsg.content?.slice(0, 50) || '(첨부 파일)')
+                    : '새 대화';
+                  const unread = unreadMessages[room.id] || 0;
+
+                  return (
+                    <button
+                      key={room.id}
+                      onClick={() => setCurrentChatId(room.id)}
+                      className="w-full bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-all text-left relative"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-gray-800 text-sm mb-1 truncate">{room.title}</h3>
+                          {room.verseRef && (
+                            <p className="text-xs text-amber-600 mb-1">📖 {room.verseRef}</p>
+                          )}
+                          <p className="text-xs text-gray-500 truncate">{lastMsgPreview}</p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                          <span className="text-xs text-gray-400">
+                            {new Date(room.createdAt).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })}
+                          </span>
+                          {unread > 0 && (
+                            <span className="w-5 h-5 bg-indigo-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                              {unread}
+                            </span>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm('이 채팅을 삭제하시겠습니까?')) {
+                                deleteChatRoom(room.id);
+                              }
+                            }}
+                            className="text-gray-400 hover:text-red-500 transition-colors"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
               )}
             </div>
           ) : (
+            /* 채팅창 화면 */
             <>
               {/* 선택한 말씀 표시 (말씀 기반 채팅일 때만) */}
               {currentChat.verseRef && (
@@ -2204,8 +2256,10 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                 value={localInput}
                 onChange={(e) => setLocalInput(e.target.value)}
                 onKeyDown={handleKeyDown}
+                onFocus={(e) => setTimeout(() => e.target.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300)}
                 placeholder="질문을 입력하세요..."
                 className="flex-1 px-4 py-3 bg-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 text-gray-800"
+                style={{ touchAction: 'manipulation' }}
               />
               <button
                 onClick={handleSend}
@@ -2220,66 +2274,6 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                 </svg>
               </button>
-            </div>
-          </div>
-        )}
-
-        {/* Chat List Modal */}
-        {showChatList && (
-          <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center" onClick={() => setShowChatList(false)}>
-            <div className="bg-white w-full max-w-lg rounded-t-3xl p-6 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-              <div className="w-12 h-1 bg-gray-300 rounded-full mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">채팅 목록</h3>
-
-              {chatRooms.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <p>아직 채팅이 없습니다.</p>
-                  <p className="text-sm mt-1">성경 탭에서 말씀을 선택해보세요.</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {chatRooms.map(room => (
-                    <div
-                      key={room.id}
-                      className={`p-4 rounded-xl border transition-all ${
-                        currentChatId === room.id
-                          ? 'border-indigo-300 bg-indigo-50'
-                          : 'border-gray-200 hover:bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <button
-                          onClick={() => { setCurrentChatId(room.id); setShowChatList(false); }}
-                          className="flex-1 text-left"
-                        >
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-medium text-gray-800">{room.title}</h4>
-                            {unreadMessages[room.id] && (
-                              <span className="px-2 py-0.5 bg-red-500 text-white text-xs font-bold rounded-full">
-                                {unreadMessages[room.id]}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {room.translation} · {room.messages.length}개 메시지
-                          </p>
-                          <p className="text-xs text-gray-400 mt-1">
-                            {new Date(room.createdAt).toLocaleDateString('ko-KR')}
-                          </p>
-                        </button>
-                        <button
-                          onClick={() => deleteChatRoom(room.id)}
-                          className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         )}
@@ -2401,7 +2395,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto p-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <div className="flex-1 overflow-y-auto scroll-container p-4" style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y', overscrollBehaviorY: 'contain' }}>
             <div className="bg-white rounded-xl p-4 shadow-sm mb-4">
               <span
                 onClick={() => {
@@ -2452,7 +2446,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
           <h2 className="text-lg font-semibold">내 메모</h2>
           <p className="text-sm text-white/80">{allNotes.length}개의 메모</p>
         </div>
-        <div className="flex-1 overflow-y-auto p-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="flex-1 overflow-y-auto scroll-container p-4" style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y', overscrollBehaviorY: 'contain' }}>
           {allNotes.length === 0 ? (
             <div className="text-center py-12">
               <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -2514,7 +2508,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
             />
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-4" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="flex-1 overflow-y-auto scroll-container p-4" style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y', overscrollBehaviorY: 'contain' }}>
           <div className="space-y-4 pb-20">
             {bookList.map(b => {
               const bookChapters = Array.from({ length: b.chapters }, (_, i) => i + 1);
@@ -2561,7 +2555,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
   };
 
   return (
-    <div className="h-screen flex flex-col bg-white font-sans overflow-hidden">
+    <div className="flex flex-col bg-white font-sans overflow-hidden" style={{ height: '100dvh', height: 'calc(var(--vh, 1vh) * 100)' }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
 
@@ -2573,18 +2567,17 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
           font-family: 'Noto Serif KR', serif;
         }
 
-        @keyframes slide-up {
-          from { transform: translateY(100%); opacity: 0; }
-          to { transform: translateY(0); opacity: 1; }
-        }
-
-        .animate-slide-up {
-          animation: slide-up 0.2s ease-out;
+        /* #root 높이만 지정 (html, body는 index.html에서 관리) */
+        #root {
+          height: 100%;
+          overflow: hidden;
         }
       `}</style>
 
-      {/* Main Content */}
-      {currentTab === 'bible' && <BibleTab />}
+      {/* Main Content - 성경탭은 display:none으로 숨겨서 스크롤 위치 유지 */}
+      <div style={{ display: currentTab === 'bible' ? 'flex' : 'none', flex: 1, flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+        <BibleTab />
+      </div>
       {currentTab === 'ai' && <AiTab />}
       {currentTab === 'notes' && <NotesTab />}
       {currentTab === 'plan' && <PlanTab />}
@@ -2629,8 +2622,8 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
       )}
 
       {/* Bottom Navigation */}
-      <div className="bg-white border-t border-gray-200 px-2 py-2 safe-area-bottom sticky bottom-0">
-        <div className="flex justify-around">
+      <div className="bg-white border-t border-gray-200 flex-shrink-0" style={{ padding: '12px 8px', paddingBottom: 'max(12px, env(safe-area-inset-bottom))', minHeight: '60px' }}>
+        <div className="flex justify-around items-center">
           {[
             { id: 'bible', icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253', label: '성경', color: 'amber' },
             { id: 'ai', icon: 'M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z', label: 'AI 채팅', color: 'indigo', badge: totalUnreadCount || null },
@@ -2640,21 +2633,27 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
             <button
               key={tab.id}
               onClick={() => setCurrentTab(tab.id)}
-              className={`flex flex-col items-center py-2 px-4 rounded-xl transition-all relative ${
+              className={`flex flex-col items-center justify-center rounded-xl transition-all relative ${
                 currentTab === tab.id
                   ? `bg-${tab.color}-100 text-${tab.color}-600`
                   : 'text-gray-400 hover:text-gray-600'
               }`}
-              style={currentTab === tab.id ? {
-                backgroundColor: tab.color === 'amber' ? '#FEF3C7' :
-                                 tab.color === 'indigo' ? '#E0E7FF' :
-                                 tab.color === 'blue' ? '#DBEAFE' :
-                                 tab.color === 'yellow' ? '#FEF9C3' : '#D1FAE5',
-                color: tab.color === 'amber' ? '#D97706' :
-                       tab.color === 'indigo' ? '#4F46E5' :
-                       tab.color === 'blue' ? '#3B82F6' :
-                       tab.color === 'yellow' ? '#CA8A04' : '#059669'
-              } : {}}
+              style={{
+                minWidth: '60px',
+                minHeight: '44px',
+                padding: '8px 16px',
+                touchAction: 'manipulation',
+                ...(currentTab === tab.id ? {
+                  backgroundColor: tab.color === 'amber' ? '#FEF3C7' :
+                                   tab.color === 'indigo' ? '#E0E7FF' :
+                                   tab.color === 'blue' ? '#DBEAFE' :
+                                   tab.color === 'yellow' ? '#FEF9C3' : '#D1FAE5',
+                  color: tab.color === 'amber' ? '#D97706' :
+                         tab.color === 'indigo' ? '#4F46E5' :
+                         tab.color === 'blue' ? '#3B82F6' :
+                         tab.color === 'yellow' ? '#CA8A04' : '#059669'
+                } : {})
+              }}
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={tab.icon} />
