@@ -2196,7 +2196,18 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
 
         {/* Chat Input */}
         {currentChat && (
-          <div className="border-t border-gray-200 bg-white">
+          <div
+            className="border-t border-gray-200 bg-white chat-input-container"
+            style={{
+              position: 'sticky',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              backgroundColor: '#ffffff',
+              borderTop: '1px solid #e5e7eb',
+              zIndex: 20
+            }}
+          >
             {/* 첨부 스테이징 영역 */}
             {(attachedImages.length > 0 || attachedVerses.length > 0) && (
               <div className="px-4 pt-3 pb-1 flex flex-wrap gap-2">
@@ -2222,7 +2233,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
               </div>
             )}
             {/* 입력 행 */}
-            <div className="p-4 flex gap-2 items-end">
+            <div className="p-4 flex gap-2 items-end" style={{ minHeight: '68px' }}>
               {/* + 버튼 */}
               <div className="relative">
                 <button onClick={() => setShowAttachMenu(!showAttachMenu)}
@@ -2259,7 +2270,12 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
                 onFocus={(e) => setTimeout(() => e.target.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300)}
                 placeholder="질문을 입력하세요..."
                 className="flex-1 px-4 py-3 bg-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 text-gray-800"
-                style={{ touchAction: 'manipulation' }}
+                style={{
+                  touchAction: 'manipulation',
+                  WebkitAppearance: 'none',
+                  minHeight: '44px',
+                  fontSize: '16px'
+                }}
               />
               <button
                 onClick={handleSend}

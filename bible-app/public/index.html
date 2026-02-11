@@ -57,6 +57,12 @@
         -webkit-overflow-scrolling: touch;
         touch-action: pan-y;
       }
+      /* 모바일 키보드 대응 */
+      @supports (padding-bottom: env(safe-area-inset-bottom)) {
+        .chat-input-container {
+          padding-bottom: max(env(safe-area-inset-bottom), 12px);
+        }
+      }
     </style>
   </head>
   <body>
