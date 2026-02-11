@@ -2011,7 +2011,8 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
         </div>
 
         {/* Chat Content */}
-        <div className="flex-1 overflow-y-auto scroll-container p-4 space-y-4" style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y', overscrollBehaviorY: 'contain' }}>
+        <div className="flex-1 overflow-y-auto scroll-container" style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y', overscrollBehaviorY: 'contain' }}>
+          <div className="p-4 space-y-4">
           {!currentChat ? (
             /* 채팅 목록 화면 */
             <div className="space-y-3">
@@ -2192,6 +2193,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
               <div ref={chatEndRef} />
             </>
           )}
+          </div>
         </div>
 
         {/* Chat Input */}
@@ -2233,7 +2235,7 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
               </div>
             )}
             {/* 입력 행 */}
-            <div className="p-4 flex gap-2 items-end" style={{ minHeight: '68px' }}>
+            <div className="px-3 py-2 flex gap-2 items-end" style={{ minHeight: '56px' }}>
               {/* + 버튼 */}
               <div className="relative">
                 <button onClick={() => setShowAttachMenu(!showAttachMenu)}
@@ -2280,15 +2282,28 @@ API 키를 받으면 무료로 AI 질문 기능을 사용할 수 있습니다!`
               <button
                 onClick={handleSend}
                 disabled={chatLoadingStates[currentChatId] || (!localInput.trim() && attachedImages.length === 0 && attachedVerses.length === 0)}
-                className={`px-4 py-3 rounded-xl transition-all flex-shrink-0 ${
+                className={`px-4 py-3 rounded-xl transition-all flex-shrink-0 font-medium text-sm flex items-center gap-1 ${
                   chatLoadingStates[currentChatId] || (!localInput.trim() && attachedImages.length === 0 && attachedVerses.length === 0)
                     ? 'bg-gray-200 text-gray-400'
                     : 'bg-indigo-500 text-white hover:bg-indigo-600'
                 }`}
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
+                {chatLoadingStates[currentChatId] ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>전송중</span>
+                  </>
+                ) : (
+                  <>
+                    <span>전송</span>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                  </>
+                )}
               </button>
             </div>
           </div>
