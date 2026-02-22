@@ -1,0 +1,125 @@
+// 성경 책 목록 (한글명, Bolls API 책 번호, 장 수)
+export const bookList = [
+  // 구약
+  { name: '창세기', bookNum: 1, chapters: 50 },
+  { name: '출애굽기', bookNum: 2, chapters: 40 },
+  { name: '레위기', bookNum: 3, chapters: 27 },
+  { name: '민수기', bookNum: 4, chapters: 36 },
+  { name: '신명기', bookNum: 5, chapters: 34 },
+  { name: '여호수아', bookNum: 6, chapters: 24 },
+  { name: '사사기', bookNum: 7, chapters: 21 },
+  { name: '룻기', bookNum: 8, chapters: 4 },
+  { name: '사무엘상', bookNum: 9, chapters: 31 },
+  { name: '사무엘하', bookNum: 10, chapters: 24 },
+  { name: '열왕기상', bookNum: 11, chapters: 22 },
+  { name: '열왕기하', bookNum: 12, chapters: 25 },
+  { name: '역대상', bookNum: 13, chapters: 29 },
+  { name: '역대하', bookNum: 14, chapters: 36 },
+  { name: '에스라', bookNum: 15, chapters: 10 },
+  { name: '느헤미야', bookNum: 16, chapters: 13 },
+  { name: '에스더', bookNum: 17, chapters: 10 },
+  { name: '욥기', bookNum: 18, chapters: 42 },
+  { name: '시편', bookNum: 19, chapters: 150 },
+  { name: '잠언', bookNum: 20, chapters: 31 },
+  { name: '전도서', bookNum: 21, chapters: 12 },
+  { name: '아가', bookNum: 22, chapters: 8 },
+  { name: '이사야', bookNum: 23, chapters: 66 },
+  { name: '예레미야', bookNum: 24, chapters: 52 },
+  { name: '예레미야애가', bookNum: 25, chapters: 5 },
+  { name: '에스겔', bookNum: 26, chapters: 48 },
+  { name: '다니엘', bookNum: 27, chapters: 12 },
+  { name: '호세아', bookNum: 28, chapters: 14 },
+  { name: '요엘', bookNum: 29, chapters: 3 },
+  { name: '아모스', bookNum: 30, chapters: 9 },
+  { name: '오바댜', bookNum: 31, chapters: 1 },
+  { name: '요나', bookNum: 32, chapters: 4 },
+  { name: '미가', bookNum: 33, chapters: 7 },
+  { name: '나훔', bookNum: 34, chapters: 3 },
+  { name: '하박국', bookNum: 35, chapters: 3 },
+  { name: '스바냐', bookNum: 36, chapters: 3 },
+  { name: '학개', bookNum: 37, chapters: 2 },
+  { name: '스가랴', bookNum: 38, chapters: 14 },
+  { name: '말라기', bookNum: 39, chapters: 4 },
+  // 신약
+  { name: '마태복음', bookNum: 40, chapters: 28 },
+  { name: '마가복음', bookNum: 41, chapters: 16 },
+  { name: '누가복음', bookNum: 42, chapters: 24 },
+  { name: '요한복음', bookNum: 43, chapters: 21 },
+  { name: '사도행전', bookNum: 44, chapters: 28 },
+  { name: '로마서', bookNum: 45, chapters: 16 },
+  { name: '고린도전서', bookNum: 46, chapters: 16 },
+  { name: '고린도후서', bookNum: 47, chapters: 13 },
+  { name: '갈라디아서', bookNum: 48, chapters: 6 },
+  { name: '에베소서', bookNum: 49, chapters: 6 },
+  { name: '빌립보서', bookNum: 50, chapters: 4 },
+  { name: '골로새서', bookNum: 51, chapters: 4 },
+  { name: '데살로니가전서', bookNum: 52, chapters: 5 },
+  { name: '데살로니가후서', bookNum: 53, chapters: 3 },
+  { name: '디모데전서', bookNum: 54, chapters: 6 },
+  { name: '디모데후서', bookNum: 55, chapters: 4 },
+  { name: '디도서', bookNum: 56, chapters: 3 },
+  { name: '빌레몬서', bookNum: 57, chapters: 1 },
+  { name: '히브리서', bookNum: 58, chapters: 13 },
+  { name: '야고보서', bookNum: 59, chapters: 5 },
+  { name: '베드로전서', bookNum: 60, chapters: 5 },
+  { name: '베드로후서', bookNum: 61, chapters: 3 },
+  { name: '요한일서', bookNum: 62, chapters: 5 },
+  { name: '요한이서', bookNum: 63, chapters: 1 },
+  { name: '요한삼서', bookNum: 64, chapters: 1 },
+  { name: '유다서', bookNum: 65, chapters: 1 },
+  { name: '요한계시록', bookNum: 66, chapters: 22 },
+];
+
+// 하이라이트 색상
+export const highlightColors = [
+  { name: '노랑', color: '#FEF3C7', border: '#F59E0B' },
+  { name: '초록', color: '#D1FAE5', border: '#10B981' },
+  { name: '파랑', color: '#DBEAFE', border: '#3B82F6' },
+  { name: '분홍', color: '#FCE7F3', border: '#EC4899' },
+  { name: '보라', color: '#EDE9FE', border: '#8B5CF6' },
+];
+
+// 번역본 목록
+export const translations = [
+  { code: '개역개정', label: '개역개정' },
+  { code: 'KRV', label: '개역한글' },
+  { code: 'NIV', label: 'NIV' },
+];
+
+// 구약/신약 경계 (마태복음 = index 39)
+export const NT_START_INDEX = 39;
+
+// 책 이름 → CSV 약어 매핑
+export const bookNameToAbbr = {
+  '창세기': '창', '출애굽기': '출', '레위기': '레', '민수기': '민', '신명기': '신',
+  '여호수아': '수', '사사기': '삿', '룻기': '룻', '사무엘상': '삼상', '사무엘하': '삼하',
+  '열왕기상': '왕상', '열왕기하': '왕하', '역대상': '대상', '역대하': '대하',
+  '에스라': '스', '느헤미야': '느', '에스더': '에', '욥기': '욥', '시편': '시',
+  '잠언': '잠', '전도서': '전', '아가': '아', '이사야': '사', '예레미야': '렘',
+  '예레미야애가': '애', '에스겔': '겔', '다니엘': '단', '호세아': '호', '요엘': '욜',
+  '아모스': '암', '오바댜': '옵', '요나': '욘', '미가': '미', '나훔': '나',
+  '하박국': '합', '스바냐': '습', '학개': '학', '스가랴': '슥', '말라기': '말',
+  '마태복음': '마', '마가복음': '막', '누가복음': '눅', '요한복음': '요',
+  '사도행전': '행', '로마서': '롬', '고린도전서': '고전', '고린도후서': '고후',
+  '갈라디아서': '갈', '에베소서': '엡', '빌립보서': '빌', '골로새서': '골',
+  '데살로니가전서': '살전', '데살로니가후서': '살후', '디모데전서': '딤전', '디모데후서': '딤후',
+  '디도서': '딛', '빌레몬서': '몬', '히브리서': '히', '야고보서': '약',
+  '베드로전서': '벧전', '베드로후서': '벧후', '요한일서': '요일', '요한이서': '요이',
+  '요한삼서': '요삼', '유다서': '유', '요한계시록': '계',
+};
+
+// 앱 컬러 테마
+export const colors = {
+  primary: '#92400e',
+  primaryLight: '#b45309',
+  primaryDark: '#78350f',
+  background: '#fffbf5',
+  card: '#ffffff',
+  border: '#e7e5e4',
+  text: '#1c1917',
+  textSecondary: '#78716c',
+  textLight: '#a8a29e',
+  tabBar: '#ffffff',
+  tabActive: '#92400e',
+  tabInactive: '#a8a29e',
+};
